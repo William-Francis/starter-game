@@ -3486,7 +3486,8 @@
       scamPopup: null,
       particles: [],
       prevFoodCount: 0,
-      prevPlayerHits: /* @__PURE__ */ new Map()
+      prevPlayerHits: /* @__PURE__ */ new Map(),
+      prevPlayerPos: /* @__PURE__ */ new Map()
     };
   }
   function lerp(a, b, t) {
@@ -3497,6 +3498,58 @@
   }
   function findById(players, id) {
     return players.find((p) => p.id === id);
+  }
+  function spawnConfetti(particles, x, y, count = 12) {
+    const colors = ["#ff1493", "#00d4ff", "#facc15", "#22c55e", "#a855f7"];
+    for (let i = 0; i < count; i++) {
+      const angle = i / count * Math.PI * 2;
+      const speed = 150 + Math.random() * 150;
+      particles.push({
+        x,
+        y,
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed,
+        life: 800,
+        maxLife: 800,
+        size: 4 + Math.random() * 4,
+        color: colors[Math.floor(Math.random() * colors.length)],
+        type: "confetti"
+      });
+    }
+  }
+  function spawnStars(particles, x, y, count = 8) {
+    for (let i = 0; i < count; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const speed = 200 + Math.random() * 200;
+      particles.push({
+        x,
+        y,
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed,
+        life: 600,
+        maxLife: 600,
+        size: 5 + Math.random() * 5,
+        color: "#ffff00",
+        type: "star"
+      });
+    }
+  }
+  function spawnSmoke(particles, x, y, count = 6) {
+    for (let i = 0; i < count; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const speed = 50 + Math.random() * 100;
+      particles.push({
+        x,
+        y,
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed - 50,
+        life: 1e3,
+        maxLife: 1e3,
+        size: 8 + Math.random() * 12,
+        color: "rgba(150, 100, 255, 0.6)",
+        type: "smoke"
+      });
+    }
   }
   function startRenderLoop(canvas2, state) {
     const ctx = canvas2.getContext("2d");
@@ -3533,6 +3586,43 @@
       const alpha = 1 - Math.exp(-CAMERA_SPEED * dt);
       state.camera.x += (target.x - state.camera.x) * alpha;
       state.camera.y += (target.y - state.camera.y) * alpha;
+      if (state.latestState.foods.length < state.prevFoodCount) {
+        const missingFood = state.prevState?.foods ?? [];
+        for (const food of missingFood) {
+          const still = state.latestState.foods.find((f) => f.id === food.id);
+          if (!still) {
+            spawnConfetti(state.particles, food.x, food.y, 15);
+            break;
+          }
+        }
+      }
+      state.prevFoodCount = state.latestState.foods.length;
+      for (const player of state.latestState.players) {
+        const prevStun = state.prevPlayerHits.get(player.id) ?? 0;
+        if (player.stunned && !prevStun) {
+          spawnStars(state.particles, player.x, player.y, 10);
+        }
+        state.prevPlayerHits.set(player.id, player.stunned ? 1 : 0);
+        const prevPos = state.prevPlayerPos.get(player.id);
+        if (prevPos) {
+          const dist = Math.sqrt((player.x - prevPos.x) ** 2 + (player.y - prevPos.y) ** 2);
+          if (dist > 500) {
+            spawnSmoke(state.particles, prevPos.x, prevPos.y, 8);
+            spawnSmoke(state.particles, player.x, player.y, 8);
+          }
+        }
+        state.prevPlayerPos.set(player.id, { x: player.x, y: player.y });
+      }
+      for (let i = state.particles.length - 1; i >= 0; i--) {
+        const p = state.particles[i];
+        p.x += p.vx * dt;
+        p.y += p.vy * dt;
+        p.life -= dt * 1e3;
+        p.vy += 300 * dt;
+        if (p.life <= 0) {
+          state.particles.splice(i, 1);
+        }
+      }
       const offsetX = canvas2.width / 2 - state.camera.x;
       const offsetY = canvas2.height / 2 - state.camera.y;
       ctx.clearRect(0, 0, canvas2.width, canvas2.height);
@@ -3876,6 +3966,38 @@
         }
         ctx.restore();
       }
+      ctx.restore();
+      ctx.save();
+      ctx.translate(offsetX, offsetY);
+      for (const particle of state.particles) {
+        const alpha2 = particle.life / particle.maxLife;
+        ctx.globalAlpha = alpha2;
+        ctx.fillStyle = particle.color;
+        if (particle.type === "confetti") {
+          ctx.fillRect(particle.x - particle.size / 2, particle.y - particle.size / 2, particle.size, particle.size);
+        } else if (particle.type === "star") {
+          ctx.save();
+          ctx.translate(particle.x, particle.y);
+          ctx.fillStyle = particle.color;
+          ctx.beginPath();
+          for (let i = 0; i < 5; i++) {
+            const angle = i * 4 * Math.PI / 5 - Math.PI / 2;
+            const x = Math.cos(angle) * particle.size;
+            const y = Math.sin(angle) * particle.size;
+            if (i === 0) ctx.moveTo(x, y);
+            else ctx.lineTo(x, y);
+          }
+          ctx.closePath();
+          ctx.fill();
+          ctx.restore();
+        } else if (particle.type === "smoke") {
+          const fadeSize = particle.size * (1 - (1 - alpha2) * 0.5);
+          ctx.beginPath();
+          ctx.arc(particle.x, particle.y, fadeSize, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+      ctx.globalAlpha = 1;
       ctx.restore();
       drawHUD(ctx, canvas2, state.latestState, state.localPlayerId);
       drawActiveEffects(ctx, canvas2, state.latestState, state.localPlayerId);

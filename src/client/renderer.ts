@@ -37,6 +37,7 @@ export interface RendererState {
   particles: Particle[];
   prevFoodCount: number;
   prevPlayerHits: Map<string, number>; // playerId -> hit count
+  prevPlayerPos: Map<string, Vec2>; // playerId -> last position
 }
 
 const GRID_SIZE = 100;
@@ -58,6 +59,7 @@ export function createRendererState(): RendererState {
     particles: [],
     prevFoodCount: 0,
     prevPlayerHits: new Map(),
+    prevPlayerPos: new Map(),
   };
 }
 
@@ -71,6 +73,61 @@ function lerpVec(a: Vec2, b: Vec2, t: number): Vec2 {
 
 function findById(players: ClientPlayer[], id: string): ClientPlayer | undefined {
   return players.find((p) => p.id === id);
+}
+
+function spawnConfetti(particles: Particle[], x: number, y: number, count: number = 12): void {
+  const colors = ['#ff1493', '#00d4ff', '#facc15', '#22c55e', '#a855f7'];
+  for (let i = 0; i < count; i++) {
+    const angle = (i / count) * Math.PI * 2;
+    const speed = 150 + Math.random() * 150;
+    particles.push({
+      x,
+      y,
+      vx: Math.cos(angle) * speed,
+      vy: Math.sin(angle) * speed,
+      life: 800,
+      maxLife: 800,
+      size: 4 + Math.random() * 4,
+      color: colors[Math.floor(Math.random() * colors.length)],
+      type: 'confetti',
+    });
+  }
+}
+
+function spawnStars(particles: Particle[], x: number, y: number, count: number = 8): void {
+  for (let i = 0; i < count; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const speed = 200 + Math.random() * 200;
+    particles.push({
+      x,
+      y,
+      vx: Math.cos(angle) * speed,
+      vy: Math.sin(angle) * speed,
+      life: 600,
+      maxLife: 600,
+      size: 5 + Math.random() * 5,
+      color: '#ffff00',
+      type: 'star',
+    });
+  }
+}
+
+function spawnSmoke(particles: Particle[], x: number, y: number, count: number = 6): void {
+  for (let i = 0; i < count; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const speed = 50 + Math.random() * 100;
+    particles.push({
+      x,
+      y,
+      vx: Math.cos(angle) * speed,
+      vy: Math.sin(angle) * speed - 50,
+      life: 1000,
+      maxLife: 1000,
+      size: 8 + Math.random() * 12,
+      color: 'rgba(150, 100, 255, 0.6)',
+      type: 'smoke',
+    });
+  }
 }
 
 export function startRenderLoop(
@@ -125,6 +182,56 @@ export function startRenderLoop(
     const alpha = 1 - Math.exp(-CAMERA_SPEED * dt);
     state.camera.x += (target.x - state.camera.x) * alpha;
     state.camera.y += (target.y - state.camera.y) * alpha;
+
+    // ── Detect events and spawn particles ─────────────────────────────────
+    // Food consumption
+    if (state.latestState.foods.length < state.prevFoodCount) {
+      // Food was eaten, find the missing one
+      const missingFood = state.prevState?.foods ?? [];
+      for (const food of missingFood) {
+        const still = state.latestState.foods.find((f) => f.id === food.id);
+        if (!still) {
+          spawnConfetti(state.particles, food.x, food.y, 15);
+          break;
+        }
+      }
+    }
+    state.prevFoodCount = state.latestState.foods.length;
+
+    // Player collision detection (stun events)
+    for (const player of state.latestState.players) {
+      const prevStun = state.prevPlayerHits.get(player.id) ?? 0;
+      if (player.stunned && !prevStun) {
+        // Player just got stunned
+        spawnStars(state.particles, player.x, player.y, 10);
+      }
+      state.prevPlayerHits.set(player.id, player.stunned ? 1 : 0);
+
+      // Portal teleportation detection (large position jump)
+      const prevPos = state.prevPlayerPos.get(player.id);
+      if (prevPos) {
+        const dist = Math.sqrt((player.x - prevPos.x) ** 2 + (player.y - prevPos.y) ** 2);
+        if (dist > 500) {
+          // Teleported! Spawn smoke at both old and new positions
+          spawnSmoke(state.particles, prevPos.x, prevPos.y, 8);
+          spawnSmoke(state.particles, player.x, player.y, 8);
+        }
+      }
+      state.prevPlayerPos.set(player.id, { x: player.x, y: player.y });
+    }
+
+    // Update particles
+    for (let i = state.particles.length - 1; i >= 0; i--) {
+      const p = state.particles[i];
+      p.x += p.vx * dt;
+      p.y += p.vy * dt;
+      p.life -= dt * 1000; // convert to ms
+      p.vy += 300 * dt; // gravity
+      
+      if (p.life <= 0) {
+        state.particles.splice(i, 1);
+      }
+    }
 
     const offsetX = canvas.width / 2 - state.camera.x;
     const offsetY = canvas.height / 2 - state.camera.y;
@@ -577,6 +684,44 @@ export function startRenderLoop(
       ctx.restore();
     }
 
+    ctx.restore();
+
+    // ── Render particles (world space) ────────────────────────────────────
+    ctx.save();
+    ctx.translate(offsetX, offsetY);
+    for (const particle of state.particles) {
+      const alpha = particle.life / particle.maxLife;
+      ctx.globalAlpha = alpha;
+      ctx.fillStyle = particle.color;
+
+      if (particle.type === 'confetti') {
+        // Small square
+        ctx.fillRect(particle.x - particle.size / 2, particle.y - particle.size / 2, particle.size, particle.size);
+      } else if (particle.type === 'star') {
+        // Star shape
+        ctx.save();
+        ctx.translate(particle.x, particle.y);
+        ctx.fillStyle = particle.color;
+        ctx.beginPath();
+        for (let i = 0; i < 5; i++) {
+          const angle = (i * 4 * Math.PI) / 5 - Math.PI / 2;
+          const x = Math.cos(angle) * particle.size;
+          const y = Math.sin(angle) * particle.size;
+          if (i === 0) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
+        }
+        ctx.closePath();
+        ctx.fill();
+        ctx.restore();
+      } else if (particle.type === 'smoke') {
+        // Circle with reduced size as it fades
+        const fadeSize = particle.size * (1 - (1 - alpha) * 0.5);
+        ctx.beginPath();
+        ctx.arc(particle.x, particle.y, fadeSize, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+    ctx.globalAlpha = 1;
     ctx.restore();
 
     // ── HUD (fixed screen-space) ─────────────────────────────────────────
