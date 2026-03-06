@@ -1,0 +1,27 @@
+{
+  "name": "starter-game",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "dev": "concurrently \"tsx watch src/server/index.ts\" \"esbuild src/client/client.ts --bundle --outfile=public/client.js --watch\"",
+    "build": "esbuild src/client/client.ts --bundle --outfile=public/client.js --minify && tsx src/server/index.ts",
+    "build:client": "esbuild src/client/client.ts --bundle --outfile=public/client.js --minify"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "express": "^5.2.1",
+    "socket.io": "^4.8.3",
+    "socket.io-client": "^4.8.3"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.6",
+    "@types/node": "^25.3.5",
+    "concurrently": "^9.2.1",
+    "esbuild": "^0.27.3",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3"
+  }
+}

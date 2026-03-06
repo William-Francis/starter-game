@@ -1,0 +1,202 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Arena Game</title>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      body {
+        background: #111;
+        color: #fff;
+        font-family: "Segoe UI", system-ui, sans-serif;
+        overflow: hidden;
+      }
+
+      /* ── Join Screen ── */
+      #join-screen {
+        position: fixed;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: #111;
+        z-index: 10;
+      }
+
+      #join-screen.hidden {
+        display: none;
+      }
+
+      .join-card {
+        background: #1e1e1e;
+        border: 1px solid #333;
+        border-radius: 16px;
+        padding: 40px 48px;
+        min-width: 340px;
+        display: flex;
+        flex-direction: column;
+        gap: 20px;
+      }
+
+      .join-card h1 {
+        font-size: 1.8rem;
+        letter-spacing: 0.02em;
+        text-align: center;
+        color: #fff;
+      }
+
+      .join-card label {
+        font-size: 0.8rem;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: #999;
+        display: block;
+        margin-bottom: 6px;
+      }
+
+      .join-card input[type="text"] {
+        width: 100%;
+        background: #2a2a2a;
+        border: 1px solid #444;
+        border-radius: 8px;
+        color: #fff;
+        font-size: 1rem;
+        padding: 10px 14px;
+        outline: none;
+        transition: border-color 0.2s;
+      }
+
+      .join-card input[type="text"]:focus {
+        border-color: #888;
+      }
+
+      .color-swatches {
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+      }
+
+      .swatch {
+        width: 36px;
+        height: 36px;
+        border-radius: 50%;
+        cursor: pointer;
+        border: 3px solid transparent;
+        transition:
+          border-color 0.15s,
+          transform 0.15s;
+      }
+
+      .swatch:hover {
+        transform: scale(1.15);
+      }
+      .swatch.selected {
+        border-color: #fff;
+      }
+
+      .join-card button {
+        background: #3b82f6;
+        color: #fff;
+        border: none;
+        border-radius: 8px;
+        font-size: 1rem;
+        font-weight: 600;
+        padding: 12px;
+        cursor: pointer;
+        transition: background 0.2s;
+      }
+
+      .join-card button:hover {
+        background: #2563eb;
+      }
+
+      /* ── Game Canvas ── */
+      #game-canvas {
+        display: none;
+        position: fixed;
+        inset: 0;
+      }
+
+      #game-canvas.visible {
+        display: block;
+      }
+
+      /* ── Disconnected Overlay ── */
+      #disconnected-overlay {
+        display: none;
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.75);
+        align-items: center;
+        justify-content: center;
+        z-index: 20;
+      }
+
+      #disconnected-overlay.visible {
+        display: flex;
+      }
+
+      #disconnected-overlay div {
+        background: #1e1e1e;
+        border: 1px solid #555;
+        border-radius: 12px;
+        padding: 32px 48px;
+        text-align: center;
+        font-size: 1.2rem;
+      }
+
+      #disconnected-overlay button {
+        margin-top: 18px;
+        background: #3b82f6;
+        color: #fff;
+        border: none;
+        border-radius: 8px;
+        padding: 10px 24px;
+        font-size: 1rem;
+        cursor: pointer;
+      }
+    </style>
+  </head>
+  <body>
+    <!-- Join Screen -->
+    <div id="join-screen">
+      <div class="join-card">
+        <h1>🕹 Arena</h1>
+        <div>
+          <label for="name-input">Your name</label>
+          <input
+            type="text"
+            id="name-input"
+            maxlength="16"
+            placeholder="Enter name…"
+            autocomplete="off"
+          />
+        </div>
+        <div>
+          <label>Pick a color</label>
+          <div class="color-swatches" id="color-swatches"></div>
+        </div>
+        <button id="play-btn">Play</button>
+      </div>
+    </div>
+
+    <!-- Game Canvas -->
+    <canvas id="game-canvas"></canvas>
+
+    <!-- Disconnected Overlay -->
+    <div id="disconnected-overlay">
+      <div>
+        <p>Disconnected from server</p>
+        <button id="rejoin-btn">Reconnect</button>
+      </div>
+    </div>
+
+    <script src="/client.js"></script>
+  </body>
+</html>
