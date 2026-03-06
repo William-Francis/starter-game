@@ -17,6 +17,7 @@ export interface ClientPlayer {
   stunnedUntil: number;
   speedBoostUntil: number;
   reversedUntil: number;
+  magnetUntil: number;
   stamina: number;
   facingAngle: number;
 }
@@ -34,8 +35,18 @@ export interface ClientPowerup {
   y: number;
 }
 
+export interface ClientBlackHole {
+  id: number;
+  x: number;
+  y: number;
+  radius: number;
+  paired?: number; // id of the exit hole
+  color: string; // hex color for this pair
+}
+
 export interface GameStatePayload {
   players: ClientPlayer[];
   foods: ClientFood[];
   powerups: ClientPowerup[];
+  blackholes: ClientBlackHole[];
 }

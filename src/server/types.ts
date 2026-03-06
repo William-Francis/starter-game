@@ -29,8 +29,10 @@ export interface ServerPlayer {
   stunned: boolean;
   stunnedUntil: number;
   spawnImmunityUntil: number;
+  teleportImmunityUntil: number;
   speedBoostUntil: number;
   reversedUntil: number;
+  magnetUntil: number;
   stamina: number;
 }
 
@@ -47,6 +49,14 @@ export interface ServerFood {
   position: Vec2;
 }
 
+export interface ServerBlackHole {
+  id: number;
+  position: Vec2;
+  radius: number;
+  paired?: number; // id of the exit hole
+  color: string; // hex color for this pair
+}
+
 // ─── Wire format (sent over socket) ─────────────────────────────────────────
 
 export interface ClientPlayer {
@@ -61,6 +71,7 @@ export interface ClientPlayer {
   stunnedUntil: number;
   speedBoostUntil: number;
   reversedUntil: number;
+  magnetUntil: number;
   stamina: number;
   facingAngle: number;    // radians, derived from facing vector
 }
@@ -78,10 +89,19 @@ export interface ClientPowerup {
   y: number;
 }
 
+export interface ClientBlackHole {
+  id: number;
+  x: number;
+  y: number;
+  radius: number;
+  paired?: number;
+}
+
 export interface GameStatePayload {
   players: ClientPlayer[];
   foods: ClientFood[];
   powerups: ClientPowerup[];
+  blackholes: ClientBlackHole[];
 }
 
 export interface JoinPayload {

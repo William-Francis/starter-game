@@ -5,7 +5,20 @@ const POWERUP_STYLE: Record<string, { color: string; label: string }> = {
   speed:        { color: '#facc15', label: '⚡' },
   'double-tail': { color: '#a855f7', label: '×2' },
   reverse:      { color: '#22d3ee', label: '↩' },
+  magnet:       { color: '#ec4899', label: '🧲' },
 };
+
+export interface Particle {
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  life: number; // remaining life in ms
+  maxLife: number;
+  size: number;
+  color: string;
+  type: 'confetti' | 'star' | 'smoke';
+}
 
 export interface ScamPopup {
   startTime: number;
@@ -21,6 +34,9 @@ export interface RendererState {
   camera: Vec2;           // smoothed camera position
   lastFrameTime: number;  // for delta-time camera lerp
   scamPopup: ScamPopup | null; // active scam popup
+  particles: Particle[];
+  prevFoodCount: number;
+  prevPlayerHits: Map<string, number>; // playerId -> hit count
 }
 
 const GRID_SIZE = 100;
@@ -39,6 +55,9 @@ export function createRendererState(): RendererState {
     camera: { x: CONFIG.ARENA_WIDTH / 2, y: CONFIG.ARENA_HEIGHT / 2 },
     lastFrameTime: Date.now(),
     scamPopup: null,
+    particles: [],
+    prevFoodCount: 0,
+    prevPlayerHits: new Map(),
   };
 }
 
@@ -190,7 +209,84 @@ export function startRenderLoop(
       ctx.fillStyle = '#000';
       ctx.fillText(style.label, pu.x, pu.y + 1);
       ctx.restore();
- }
+    }
+
+    // ── Black Holes ──────────────────────────────────────────────────────────
+    for (const bh of state.latestState.blackholes) {
+      const bhRadius = bh.radius || CONFIG.BLACKHOLE_RADIUS;
+      const bhColor = bh.color || '#a020f0'; // fallback to purple
+
+      ctx.save();
+
+      // Swirling vortex effect - multiple rotating rings using hole's color
+      for (let ring = 0; ring < 3; ring++) {
+        const ringRadius = bhRadius * (0.3 + ring * 0.25);
+        const rotation = (now * 0.0008 * (ring % 2 ? 1 : -1)) + ring * Math.PI / 1.5;
+        
+        ctx.strokeStyle = `${bhColor}${Math.floor((0.5 - ring * 0.12) * 255).toString(16).padStart(2, '0')}`;
+        ctx.lineWidth = 1.5 - ring * 0.3;
+        ctx.beginPath();
+        for (let i = 0; i < 6; i++) {
+          const angle = rotation + (i / 6) * Math.PI * 2;
+          const x = bh.x + Math.cos(angle) * ringRadius;
+          const y = bh.y + Math.sin(angle) * ringRadius;
+          if (i === 0) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
+        }
+        ctx.closePath();
+        ctx.stroke();
+      }
+
+      // Glow with hole's color
+      ctx.shadowColor = bhColor;
+      ctx.shadowBlur = 40;
+      ctx.fillStyle = bhColor;
+      ctx.globalAlpha = 0.4;
+      ctx.beginPath();
+      ctx.arc(bh.x, bh.y, bhRadius * 0.8, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.shadowBlur = 0;
+
+      // Dark core with gradient
+      const coreGradient = ctx.createRadialGradient(bh.x, bh.y, 0, bh.x, bh.y, bhRadius * 0.7);
+      coreGradient.addColorStop(0, 'rgba(0, 0, 0, 0.9)');
+      coreGradient.addColorStop(1, `${bhColor}40`);
+      ctx.fillStyle = coreGradient;
+      ctx.globalAlpha = 1;
+      ctx.beginPath();
+      ctx.arc(bh.x, bh.y, bhRadius * 0.7, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Bright event horizon ring with hole's color
+      const horizonPulse = 0.4 + 0.6 * Math.sin(now * 0.006);
+      ctx.strokeStyle = bhColor;
+      ctx.globalAlpha = horizonPulse;
+      ctx.lineWidth = 3;
+      ctx.shadowColor = bhColor;
+      ctx.shadowBlur = 20;
+      ctx.beginPath();
+      ctx.arc(bh.x, bh.y, bhRadius, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.shadowBlur = 0;
+
+      // Inward pull effect - small particles spiraling in
+      for (let p = 0; p < 5; p++) {
+        const angle = (now * 0.001 + p * (Math.PI * 2 / 5)) % (Math.PI * 2);
+        const dist = bhRadius * 1.3;
+        const px = bh.x + Math.cos(angle) * dist;
+        const py = bh.y + Math.sin(angle) * dist;
+        const fade = 0.3 + 0.7 * (1 - (angle % (Math.PI * 2)) / (Math.PI * 2));
+        
+        ctx.globalAlpha = fade;
+        ctx.fillStyle = '#ff00ff';
+        ctx.beginPath();
+        ctx.arc(px, py, 2, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      ctx.globalAlpha = 1;
+      ctx.restore();
+    }
     // ── Find top scorer ─────────────────────────────────────────────────
     const topScorer = state.latestState.players.reduce((max, p) => p.score > max.score ? p : max);
 
@@ -487,6 +583,7 @@ export function startRenderLoop(
     drawHUD(ctx, canvas, state.latestState, state.localPlayerId);
     drawActiveEffects(ctx, canvas, state.latestState, state.localPlayerId);
     drawSprintBar(ctx, canvas, state.latestState, state.localPlayerId, now);
+    drawScamPopup(ctx, canvas, state);
   }
 
   requestAnimationFrame(frame);
@@ -602,7 +699,20 @@ function drawMinimap(
     ctx.fill();
   }
 
-  // Player dots
+  // Black holes on minimap
+  for (const bh of state.blackholes) {
+    const bhColor = bh.color || '#a020f0';
+    ctx.fillStyle = bhColor;
+    ctx.beginPath();
+    ctx.arc(mx + bh.x * scaleX, my + bh.y * scaleY, 4, 0, Math.PI * 2);
+    ctx.fill();
+    // Glow ring
+    ctx.strokeStyle = bhColor;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.arc(mx + bh.x * scaleX, my + bh.y * scaleY, 6, 0, Math.PI * 2);
+    ctx.stroke();
+  }
   for (const p of state.players) {
     const isLocal = p.id === localId;
     ctx.beginPath();
@@ -733,6 +843,13 @@ function drawActiveEffects(
       label: '↩ Reversed',
       color: '#22d3ee',
       remaining: (player.reversedUntil - now) / 1000,
+    });
+  }
+  if (player.magnetUntil > now) {
+    effects.push({
+      label: '🧲 Magnet',
+      color: '#ec4899',
+      remaining: (player.magnetUntil - now) / 1000,
     });
   }
 

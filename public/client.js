@@ -3430,6 +3430,10 @@
     POWERUP_SPEED_MULTIPLIER: 1.8,
     POWERUP_LIFESPAN: 1e4,
     // ms before an uncollected powerup despawns
+    POWERUP_MAGNET_DURATION: 5e3,
+    // ms
+    POWERUP_MAGNET_RADIUS: 200,
+    // px — food attraction pull range
     SPRINT_SPEED_MULTIPLIER: 1.2,
     SPRINT_MAX_STAMINA: 100,
     // unitless
@@ -3437,8 +3441,14 @@
     // stamina/sec
     SPRINT_RECHARGE_RATE: 20,
     // stamina/sec
-    SPRINT_MIN_STAMINA: 10
+    SPRINT_MIN_STAMINA: 10,
     // minimum to begin a sprint
+    BLACKHOLE_RADIUS: 40,
+    // visual radius
+    BLACKHOLE_TARGET_COUNT: 4,
+    // number of black holes in arena
+    BLACKHOLE_MIN_DISTANCE: 300
+    // minimum distance between holes
   };
   var EVENTS = {
     // client -> server
@@ -3456,7 +3466,8 @@
   var POWERUP_STYLE = {
     speed: { color: "#facc15", label: "\u26A1" },
     "double-tail": { color: "#a855f7", label: "\xD72" },
-    reverse: { color: "#22d3ee", label: "\u21A9" }
+    reverse: { color: "#22d3ee", label: "\u21A9" },
+    magnet: { color: "#ec4899", label: "\u{1F9F2}" }
   };
   var GRID_SIZE = 100;
   var BG_COLOR = "#1a1a2e";
@@ -3472,7 +3483,10 @@
       stunFlash: /* @__PURE__ */ new Map(),
       camera: { x: CONFIG.ARENA_WIDTH / 2, y: CONFIG.ARENA_HEIGHT / 2 },
       lastFrameTime: Date.now(),
-      scamPopup: null
+      scamPopup: null,
+      particles: [],
+      prevFoodCount: 0,
+      prevPlayerHits: /* @__PURE__ */ new Map()
     };
   }
   function lerp(a, b, t) {
@@ -3580,6 +3594,67 @@
         ctx.textBaseline = "middle";
         ctx.fillStyle = "#000";
         ctx.fillText(style.label, pu.x, pu.y + 1);
+        ctx.restore();
+      }
+      for (const bh of state.latestState.blackholes) {
+        const bhRadius = bh.radius || CONFIG.BLACKHOLE_RADIUS;
+        const bhColor = bh.color || "#a020f0";
+        ctx.save();
+        for (let ring = 0; ring < 3; ring++) {
+          const ringRadius = bhRadius * (0.3 + ring * 0.25);
+          const rotation = now * 8e-4 * (ring % 2 ? 1 : -1) + ring * Math.PI / 1.5;
+          ctx.strokeStyle = `${bhColor}${Math.floor((0.5 - ring * 0.12) * 255).toString(16).padStart(2, "0")}`;
+          ctx.lineWidth = 1.5 - ring * 0.3;
+          ctx.beginPath();
+          for (let i = 0; i < 6; i++) {
+            const angle = rotation + i / 6 * Math.PI * 2;
+            const x = bh.x + Math.cos(angle) * ringRadius;
+            const y = bh.y + Math.sin(angle) * ringRadius;
+            if (i === 0) ctx.moveTo(x, y);
+            else ctx.lineTo(x, y);
+          }
+          ctx.closePath();
+          ctx.stroke();
+        }
+        ctx.shadowColor = bhColor;
+        ctx.shadowBlur = 40;
+        ctx.fillStyle = bhColor;
+        ctx.globalAlpha = 0.4;
+        ctx.beginPath();
+        ctx.arc(bh.x, bh.y, bhRadius * 0.8, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.shadowBlur = 0;
+        const coreGradient = ctx.createRadialGradient(bh.x, bh.y, 0, bh.x, bh.y, bhRadius * 0.7);
+        coreGradient.addColorStop(0, "rgba(0, 0, 0, 0.9)");
+        coreGradient.addColorStop(1, `${bhColor}40`);
+        ctx.fillStyle = coreGradient;
+        ctx.globalAlpha = 1;
+        ctx.beginPath();
+        ctx.arc(bh.x, bh.y, bhRadius * 0.7, 0, Math.PI * 2);
+        ctx.fill();
+        const horizonPulse = 0.4 + 0.6 * Math.sin(now * 6e-3);
+        ctx.strokeStyle = bhColor;
+        ctx.globalAlpha = horizonPulse;
+        ctx.lineWidth = 3;
+        ctx.shadowColor = bhColor;
+        ctx.shadowBlur = 20;
+        ctx.beginPath();
+        ctx.arc(bh.x, bh.y, bhRadius, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.shadowBlur = 0;
+        for (let p = 0; p < 5; p++) {
+          const angle = (now * 1e-3 + p * (Math.PI * 2 / 5)) % (Math.PI * 2);
+          const dist = bhRadius * 1.3;
+          const px = bh.x + Math.cos(angle) * dist;
+          const py = bh.y + Math.sin(angle) * dist;
+          const fade = 0.3 + 0.7 * (1 - angle % (Math.PI * 2) / (Math.PI * 2));
+          ctx.globalAlpha = fade;
+          ctx.fillStyle = "#ff00ff";
+          ctx.beginPath();
+          ctx.arc(px, py, 2, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.globalAlpha = 1;
         ctx.restore();
       }
       const topScorer = state.latestState.players.reduce((max, p) => p.score > max.score ? p : max);
@@ -3805,6 +3880,7 @@
       drawHUD(ctx, canvas2, state.latestState, state.localPlayerId);
       drawActiveEffects(ctx, canvas2, state.latestState, state.localPlayerId);
       drawSprintBar(ctx, canvas2, state.latestState, state.localPlayerId, now);
+      drawScamPopup(ctx, canvas2, state);
     }
     requestAnimationFrame(frame);
   }
@@ -3885,6 +3961,18 @@
       ctx.arc(mx + pu.x * scaleX, my + pu.y * scaleY, 2.5, 0, Math.PI * 2);
       ctx.fillStyle = style.color;
       ctx.fill();
+    }
+    for (const bh of state.blackholes) {
+      const bhColor = bh.color || "#a020f0";
+      ctx.fillStyle = bhColor;
+      ctx.beginPath();
+      ctx.arc(mx + bh.x * scaleX, my + bh.y * scaleY, 4, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = bhColor;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.arc(mx + bh.x * scaleX, my + bh.y * scaleY, 6, 0, Math.PI * 2);
+      ctx.stroke();
     }
     for (const p of state.players) {
       const isLocal = p.id === localId;
@@ -3983,6 +4071,13 @@
         remaining: (player.reversedUntil - now) / 1e3
       });
     }
+    if (player.magnetUntil > now) {
+      effects.push({
+        label: "\u{1F9F2} Magnet",
+        color: "#ec4899",
+        remaining: (player.magnetUntil - now) / 1e3
+      });
+    }
     if (effects.length === 0) return;
     const PILL_W = 150;
     const PILL_H = 30;
@@ -4010,6 +4105,58 @@
       ctx.textAlign = "right";
       ctx.fillText(`${fx.remaining.toFixed(1)}s`, startX + PILL_W - 10, y + PILL_H / 2);
     });
+    ctx.restore();
+  }
+  var SCAM_POPUP_DURATION = 3e3;
+  function drawScamPopup(ctx, canvas2, state) {
+    if (!state.scamPopup) return;
+    const now = Date.now();
+    const elapsed = now - state.scamPopup.startTime;
+    if (elapsed > SCAM_POPUP_DURATION) {
+      state.scamPopup = null;
+      return;
+    }
+    const disguiseLabel = POWERUP_STYLE[state.scamPopup.disguisedAs]?.label ?? "?";
+    const disguiseName = state.scamPopup.disguisedAs === "speed" ? "Speed Boost" : "Double Tail";
+    let alpha = 1;
+    if (elapsed < 200) {
+      alpha = elapsed / 200;
+    } else if (elapsed > SCAM_POPUP_DURATION - 600) {
+      alpha = (SCAM_POPUP_DURATION - elapsed) / 600;
+    }
+    const shakeX = elapsed < 500 ? (Math.random() - 0.5) * 6 : 0;
+    const shakeY = elapsed < 500 ? (Math.random() - 0.5) * 6 : 0;
+    const scale = elapsed < 300 ? 0.8 + 0.4 * Math.min(1, elapsed / 300) : 1 + 0.02 * Math.sin(elapsed * 8e-3);
+    const BOX_W = 360;
+    const BOX_H = 120;
+    const cx = canvas2.width / 2 + shakeX;
+    const cy = canvas2.height / 2 - 60 + shakeY;
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.translate(cx, cy);
+    ctx.scale(scale, scale);
+    ctx.translate(-cx, -cy);
+    ctx.fillStyle = "rgba(0,0,0,0.6)";
+    roundRect(ctx, cx - BOX_W / 2, cy - BOX_H / 2, BOX_W, BOX_H, 16);
+    ctx.fill();
+    ctx.strokeStyle = "#ef4444";
+    ctx.lineWidth = 3;
+    ctx.shadowColor = "#ef4444";
+    ctx.shadowBlur = 20;
+    roundRect(ctx, cx - BOX_W / 2, cy - BOX_H / 2, BOX_W, BOX_H, 16);
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+    ctx.font = 'bold 28px "Segoe UI", system-ui, sans-serif';
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillStyle = "#ef4444";
+    ctx.fillText("\u{1F6A8} YOU'VE BEEN SCAMMED! \u{1F6A8}", cx, cy - 18);
+    ctx.font = '15px "Segoe UI", system-ui, sans-serif';
+    ctx.fillStyle = "#facc15";
+    ctx.fillText(`That ${disguiseLabel} ${disguiseName} was actually  \u21A9 Reverse!`, cx, cy + 16);
+    ctx.font = 'italic 12px "Segoe UI", system-ui, sans-serif';
+    ctx.fillStyle = "#aaa";
+    ctx.fillText("Your controls are now reversed...", cx, cy + 42);
     ctx.restore();
   }
 

@@ -4,16 +4,19 @@ import {
   ServerPlayer,
   ServerFood,
   ServerPowerup,
+  ServerBlackHole,
   GameStatePayload,
   ClientPlayer,
   ClientFood,
   ClientPowerup,
+  ClientBlackHole,
   InputState,
   Vec2,
 } from './types';
 
 let foodIdCounter = 0;
 let powerupIdCounter = 0;
+let blackholeIdCounter = 0;
 
 function randomInRange(min: number, max: number): number {
   return Math.random() * (max - min) + min;
@@ -88,6 +91,46 @@ function spawnPowerups(
   }
 }
 
+function spawnBlackHoles(
+  players: Map<string, ServerPlayer>,
+  blackholes: ServerBlackHole[]
+): void {
+  if (blackholes.length >= CONFIG.BLACKHOLE_TARGET_COUNT) return;
+
+  // Margin from the edges for corner placement
+  const margin = CONFIG.BLACKHOLE_RADIUS * 3;
+  const cornerPositions: Vec2[] = [
+    { x: margin, y: margin }, // top-left
+    { x: CONFIG.ARENA_WIDTH - margin, y: margin }, // top-right
+    { x: margin, y: CONFIG.ARENA_HEIGHT - margin }, // bottom-left
+    { x: CONFIG.ARENA_WIDTH - margin, y: CONFIG.ARENA_HEIGHT - margin }, // bottom-right
+  ];
+
+  // Colors for paired holes (2 pairs)
+  const pairColors = ['#ff1493', '#00d4ff']; // hot pink and cyan
+
+  // Create 4 holes in the corners
+  for (let i = 0; i < Math.min(cornerPositions.length, CONFIG.BLACKHOLE_TARGET_COUNT); i++) {
+    const color = pairColors[Math.floor(i / 2) % pairColors.length];
+    blackholes.push({
+      id: blackholeIdCounter++,
+      position: { ...cornerPositions[i] },
+      radius: CONFIG.BLACKHOLE_RADIUS,
+      color,
+    });
+  }
+
+  // Pair up holes: hole 0 <-> hole 1, hole 2 <-> hole 3
+  if (blackholes.length >= 2) {
+    blackholes[0].paired = blackholes[1].id;
+    blackholes[1].paired = blackholes[0].id;
+  }
+  if (blackholes.length >= 4) {
+    blackholes[2].paired = blackholes[3].id;
+    blackholes[3].paired = blackholes[2].id;
+  }
+}
+
 function computeTailFromHistory(history: Vec2[], score: number): Vec2[] {
   if (score === 0 || history.length === 0) return [];
 
@@ -110,7 +153,8 @@ function computeTailFromHistory(history: Vec2[], score: number): Vec2[] {
 function serializeState(
   players: Map<string, ServerPlayer>,
   foods: ServerFood[],
-  powerups: ServerPowerup[]
+  powerups: ServerPowerup[],
+  blackholes: ServerBlackHole[]
 ): GameStatePayload {
   const clientPlayers: ClientPlayer[] = [];
   for (const p of players.values()) {
@@ -126,6 +170,7 @@ function serializeState(
       stunnedUntil: p.stunnedUntil,
       speedBoostUntil: p.speedBoostUntil,
       reversedUntil: p.reversedUntil,
+      magnetUntil: p.magnetUntil,
       stamina: p.stamina,
       facingAngle: Math.atan2(p.facing.y, p.facing.x),
     });
@@ -141,14 +186,24 @@ function serializeState(
     x: p.position.x,
     y: p.position.y,
   }));
-  return { players: clientPlayers, foods: clientFoods, powerups: clientPowerups };
+  const clientBlackHoles: ClientBlackHole[] = blackholes.map((bh) => ({
+    id: bh.id,
+    x: bh.position.x,
+    y: bh.position.y,
+    radius: bh.radius,
+    paired: bh.paired,
+    color: bh.color,
+  }));
+  return { players: clientPlayers, foods: clientFoods, powerups: clientPowerups, blackholes: clientBlackHoles };
 }
 
 export function startGame(io: Server, players: Map<string, ServerPlayer>): void {
   const foods: ServerFood[] = [];
   const powerups: ServerPowerup[] = [];
+  const blackholes: ServerBlackHole[] = [];
   spawnFood(players, foods);
   spawnPowerups(players, powerups);
+  spawnBlackHoles(players, blackholes);
 
   let lastTick = Date.now();
 
@@ -285,6 +340,23 @@ export function startGame(io: Server, players: Map<string, ServerPlayer>): void 
     // 3. Respawn food
     spawnFood(players, foods);
 
+    // 3b. Magnet: pull nearby food toward magnetic players
+    for (const player of players.values()) {
+      if (player.stunned || now >= player.magnetUntil) continue;
+      for (const food of foods) {
+        const dx = player.position.x - food.position.x;
+        const dy = player.position.y - food.position.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist < CONFIG.POWERUP_MAGNET_RADIUS && dist > 1) {
+          const pullSpeed = CONFIG.PLAYER_SPEED * 1.5;
+          const nx = dx / dist;
+          const ny = dy / dist;
+          food.position.x += nx * pullSpeed * dt;
+          food.position.y += ny * pullSpeed * dt;
+        }
+      }
+    }
+
     // 4. Powerup collection
     for (const player of players.values()) {
       if (player.stunned) continue;
@@ -304,6 +376,8 @@ export function startGame(io: Server, players: Map<string, ServerPlayer>): void 
           } else if (pu.type === 'double-tail') {
             player.score = player.score * 2;
             player.tail = computeTailFromHistory(player.pathHistory, player.score);
+          } else if (pu.type === 'magnet') {
+            player.magnetUntil = now + CONFIG.POWERUP_MAGNET_DURATION;
           }
         }
       }
@@ -318,6 +392,46 @@ export function startGame(io: Server, players: Map<string, ServerPlayer>): void 
 
     // Respawn powerups
     spawnPowerups(players, powerups);
+
+    // 4b. Black hole teleportation
+    for (const player of players.values()) {
+      if (player.stunned) continue;
+      if (now < player.teleportImmunityUntil) continue; // Skip if in teleport cooldown
+      for (const bh of blackholes) {
+        if (distance(player.position, bh.position) < bh.radius + CONFIG.PLAYER_RADIUS) {
+          // Player entered this black hole!
+          if (bh.paired !== undefined) {
+            // Find the paired exit hole
+            const exitHole = blackholes.find((h) => h.id === bh.paired);
+            if (exitHole) {
+              // Teleport player to the exit hole with a small offset
+              const angle = Math.random() * Math.PI * 2;
+              const offset = CONFIG.PLAYER_RADIUS * 2;
+              player.position = {
+                x: exitHole.position.x + Math.cos(angle) * offset,
+                y: exitHole.position.y + Math.sin(angle) * offset,
+              };
+              // Clamp to arena bounds
+              player.position.x = Math.max(
+                CONFIG.PLAYER_RADIUS,
+                Math.min(CONFIG.ARENA_WIDTH - CONFIG.PLAYER_RADIUS, player.position.x)
+              );
+              player.position.y = Math.max(
+                CONFIG.PLAYER_RADIUS,
+                Math.min(CONFIG.ARENA_HEIGHT - CONFIG.PLAYER_RADIUS, player.position.y)
+              );
+              // Clear path history and update tail
+              player.pathHistory = [{ ...player.position }];
+              player.distanceTravelled = 0;
+              player.tail = computeTailFromHistory(player.pathHistory, player.score);
+              // Set teleport immunity so they don't immediately bounce back
+              player.teleportImmunityUntil = now + 1500; // 1.5 second cooldown
+              break; // Don't process other holes this tick
+            }
+          }
+        }
+      }
+    }
 
     // 5. Tail collision detection
     for (const player of players.values()) {
@@ -364,7 +478,7 @@ export function startGame(io: Server, players: Map<string, ServerPlayer>): void 
 
   // ─── State broadcast ─────────────────────────────────────────────────────────
   setInterval(() => {
-    const state = serializeState(players, foods, powerups);
+    const state = serializeState(players, foods, powerups, blackholes);
     io.emit('state', state);
   }, 1000 / CONFIG.BROADCAST_RATE);
 }
@@ -392,8 +506,10 @@ export function createPlayer(
     stunned: false,
     stunnedUntil: 0,
     spawnImmunityUntil: Date.now() + CONFIG.SPAWN_IMMUNITY_MS,
+    teleportImmunityUntil: 0,
     speedBoostUntil: 0,
     reversedUntil: 0,
+    magnetUntil: 0,
     stamina: CONFIG.SPRINT_MAX_STAMINA,
   };
   return player;

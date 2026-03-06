@@ -47,7 +47,7 @@ io.on('connection', (socket) => {
     players.set(socket.id, player);
 
     // Confirm join to the new player
-    const gameState = serializeState(players, [], []); // foods/powerups sent via state broadcast
+    const gameState = serializeState(players, [], [], []); // foods/powerups/blackholes sent via state broadcast
     socket.emit(EVENTS.JOINED, { playerId: socket.id, gameState });
 
     // Notify others
