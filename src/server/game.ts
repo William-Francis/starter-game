@@ -291,26 +291,33 @@ export function startGame(io: Server, players: Map<string, ServerPlayer>): void 
       if (player.stunned) continue;
       if (now < player.spawnImmunityUntil) continue;
 
-      let hit = false;
+      let didHit = false;
+      let tailOwner: ServerPlayer | null = null;
 
-      for (const other of players.values()) {
+      outer: for (const other of players.values()) {
         const isSelf = other.id === player.id;
         // For own tail, skip the first 3 segments (they're always near the head)
         const tail = isSelf ? other.tail.slice(3) : other.tail;
-
         for (const seg of tail) {
           if (
             distance(player.position, seg) <
             CONFIG.PLAYER_RADIUS + CONFIG.TAIL_SEGMENT_RADIUS
           ) {
-            hit = true;
-            break;
+            didHit = true;
+            tailOwner = isSelf ? null : other;
+            break outer;
           }
         }
-        if (hit) break;
       }
 
-      if (hit) {
+      if (didHit) {
+        // Award the tail owner half the colliding player's score (rounded up)
+        if (tailOwner && player.score > 0) {
+          const bonus = Math.ceil(player.score / 2);
+          tailOwner.score += bonus;
+          tailOwner.tail = computeTailFromHistory(tailOwner.pathHistory, tailOwner.score);
+        }
+
         player.stunned = true;
         player.stunnedUntil = now + CONFIG.STUN_DURATION;
         player.score = 0;
