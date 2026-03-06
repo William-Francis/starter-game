@@ -95,6 +95,13 @@ function startGame(name: string, color: string): void {
     rendererState.lastStateTime = Date.now();
   });
 
+  socket.on('scammed', (data: { disguisedAs: string }) => {
+    rendererState.scamPopup = {
+      startTime: Date.now(),
+      disguisedAs: data.disguisedAs,
+    };
+  });
+
   socket.on('disconnect', () => {
     disconnectedOverlay.classList.add('visible');
   });
@@ -118,7 +125,7 @@ rejoinBtn.addEventListener('click', () => {
 });
 
 // ── Input handling ────────────────────────────────────────────────────────────
-const keys = { up: false, down: false, left: false, right: false };
+const keys = { up: false, down: false, left: false, right: false, sprint: false };
 
 function setupInput(): void {
   window.addEventListener('keydown', onKey);
@@ -130,8 +137,8 @@ function onKey(e: KeyboardEvent): void {
   const pressed = e.type === 'keydown';
   let changed = false;
 
-  // Prevent page scrolling on WASD
-  if (['w', 'a', 's', 'd'].includes(e.key.toLowerCase())) {
+  // Prevent page scrolling on WASD / Space
+  if (['w', 'a', 's', 'd', ' '].includes(e.key.toLowerCase())) {
     e.preventDefault();
   }
 
@@ -140,6 +147,7 @@ function onKey(e: KeyboardEvent): void {
     case 's': case 'arrowdown':  if (keys.down  !== pressed) { keys.down  = pressed; changed = true; } break;
     case 'a': case 'arrowleft':  if (keys.left  !== pressed) { keys.left  = pressed; changed = true; } break;
     case 'd': case 'arrowright': if (keys.right !== pressed) { keys.right = pressed; changed = true; } break;
+    case ' ':                    if (keys.sprint !== pressed) { keys.sprint = pressed; changed = true; } break;
   }
 
   if (changed) {

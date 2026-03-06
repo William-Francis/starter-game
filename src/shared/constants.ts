@@ -18,6 +18,12 @@ export const CONFIG = {
   POWERUP_SPEED_DURATION: 5000,   // ms
   POWERUP_REVERSE_DURATION: 5000, // ms
   POWERUP_SPEED_MULTIPLIER: 1.8,
+  POWERUP_LIFESPAN: 10000,        // ms before an uncollected powerup despawns
+  SPRINT_SPEED_MULTIPLIER: 1.2,
+  SPRINT_MAX_STAMINA: 100,        // unitless
+  SPRINT_DRAIN_RATE: 40,          // stamina/sec
+  SPRINT_RECHARGE_RATE: 20,       // stamina/sec
+  SPRINT_MIN_STAMINA: 10,         // minimum to begin a sprint
 } as const;
 
 export type PowerupType = 'speed' | 'double-tail' | 'reverse';

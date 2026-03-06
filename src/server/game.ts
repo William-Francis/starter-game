@@ -65,17 +65,26 @@ function spawnFood(players: Map<string, ServerPlayer>, foods: ServerFood[]): voi
   }
 }
 
+// Non-reverse types used as disguises for the reverse powerup
+const DISGUISE_TYPES: PowerupType[] = POWERUP_TYPES.filter((t) => t !== 'reverse');
+
 function spawnPowerups(
   players: Map<string, ServerPlayer>,
   powerups: ServerPowerup[]
 ): void {
   while (powerups.length < CONFIG.POWERUP_TARGET_COUNT) {
     const type = POWERUP_TYPES[Math.floor(Math.random() * POWERUP_TYPES.length)];
-    powerups.push({
+    const pu: ServerPowerup = {
       id: powerupIdCounter++,
       type,
       position: randomSpawnPosition(players, []),
-    });
+      spawnedAt: Date.now(),
+    };
+    // Reverse powerups masquerade as a random non-reverse powerup
+    if (type === 'reverse') {
+      pu.disguiseType = DISGUISE_TYPES[Math.floor(Math.random() * DISGUISE_TYPES.length)];
+    }
+    powerups.push(pu);
   }
 }
 
@@ -117,6 +126,8 @@ function serializeState(
       stunnedUntil: p.stunnedUntil,
       speedBoostUntil: p.speedBoostUntil,
       reversedUntil: p.reversedUntil,
+      stamina: p.stamina,
+      facingAngle: Math.atan2(p.facing.y, p.facing.x),
     });
   }
   const clientFoods: ClientFood[] = foods.map((f) => ({
@@ -126,7 +137,7 @@ function serializeState(
   }));
   const clientPowerups: ClientPowerup[] = powerups.map((p) => ({
     id: p.id,
-    type: p.type,
+    type: p.disguiseType ?? p.type, // send disguise to clients so reverse looks like another powerup
     x: p.position.x,
     y: p.position.y,
   }));
@@ -198,9 +209,22 @@ export function startGame(io: Server, players: Map<string, ServerPlayer>): void 
 
       // Always move — use facing when no keys are pressed
       {
-        const speed = now < player.speedBoostUntil
+        // Sprint: drains stamina while held; recharges when released
+        const canSprint = player.input.sprint && player.stamina > 0;
+        if (canSprint) {
+          player.stamina = Math.max(0, player.stamina - CONFIG.SPRINT_DRAIN_RATE * dt);
+        } else {
+          player.stamina = Math.min(
+            CONFIG.SPRINT_MAX_STAMINA,
+            player.stamina + CONFIG.SPRINT_RECHARGE_RATE * dt
+          );
+        }
+        // Prevent re-triggering a sprint until stamina recovers past the minimum threshold
+        const isSprinting = canSprint && player.stamina > 0;
+
+        const speed = (now < player.speedBoostUntil
           ? CONFIG.PLAYER_SPEED * CONFIG.POWERUP_SPEED_MULTIPLIER
-          : CONFIG.PLAYER_SPEED;
+          : CONFIG.PLAYER_SPEED) * (isSprinting ? CONFIG.SPRINT_SPEED_MULTIPLIER : 1);
         const dx = player.facing.x * speed * dt;
         const dy = player.facing.y * speed * dt;
 
@@ -275,11 +299,20 @@ export function startGame(io: Server, players: Map<string, ServerPlayer>): void 
             player.speedBoostUntil = now + CONFIG.POWERUP_SPEED_DURATION;
           } else if (pu.type === 'reverse') {
             player.reversedUntil = now + CONFIG.POWERUP_REVERSE_DURATION;
+            // Notify the player they've been scammed
+            io.to(player.id).emit('scammed', { disguisedAs: pu.disguiseType ?? 'speed' });
           } else if (pu.type === 'double-tail') {
             player.score = player.score * 2;
             player.tail = computeTailFromHistory(player.pathHistory, player.score);
           }
         }
+      }
+    }
+
+    // Expire old powerups
+    for (let i = powerups.length - 1; i >= 0; i--) {
+      if (now - powerups[i].spawnedAt >= CONFIG.POWERUP_LIFESPAN) {
+        powerups.splice(i, 1);
       }
     }
 
@@ -350,7 +383,7 @@ export function createPlayer(
     name: name.slice(0, CONFIG.MAX_PLAYER_NAME_LENGTH).replace(/[<>&"]/g, ''),
     color,
     position,
-    input: { up: false, down: false, left: false, right: false },
+    input: { up: false, down: false, left: false, right: false, sprint: false },
     facing: { x: Math.cos(angle), y: Math.sin(angle) },
     score: 0,
     tail: [],
@@ -361,6 +394,7 @@ export function createPlayer(
     spawnImmunityUntil: Date.now() + CONFIG.SPAWN_IMMUNITY_MS,
     speedBoostUntil: 0,
     reversedUntil: 0,
+    stamina: CONFIG.SPRINT_MAX_STAMINA,
   };
   return player;
 }

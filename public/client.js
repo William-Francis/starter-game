@@ -3427,7 +3427,18 @@
     // ms
     POWERUP_REVERSE_DURATION: 5e3,
     // ms
-    POWERUP_SPEED_MULTIPLIER: 1.8
+    POWERUP_SPEED_MULTIPLIER: 1.8,
+    POWERUP_LIFESPAN: 1e4,
+    // ms before an uncollected powerup despawns
+    SPRINT_SPEED_MULTIPLIER: 1.2,
+    SPRINT_MAX_STAMINA: 100,
+    // unitless
+    SPRINT_DRAIN_RATE: 40,
+    // stamina/sec
+    SPRINT_RECHARGE_RATE: 20,
+    // stamina/sec
+    SPRINT_MIN_STAMINA: 10
+    // minimum to begin a sprint
   };
   var EVENTS = {
     // client -> server
@@ -3460,7 +3471,8 @@
       lastStateTime: Date.now(),
       stunFlash: /* @__PURE__ */ new Map(),
       camera: { x: CONFIG.ARENA_WIDTH / 2, y: CONFIG.ARENA_HEIGHT / 2 },
-      lastFrameTime: Date.now()
+      lastFrameTime: Date.now(),
+      scamPopup: null
     };
   }
   function lerp(a, b, t) {
@@ -3503,7 +3515,7 @@
       const frameNow = Date.now();
       const dt = Math.min((frameNow - state.lastFrameTime) / 1e3, 0.1);
       state.lastFrameTime = frameNow;
-      const CAMERA_SPEED = 8;
+      const CAMERA_SPEED = 10;
       const alpha = 1 - Math.exp(-CAMERA_SPEED * dt);
       state.camera.x += (target.x - state.camera.x) * alpha;
       state.camera.y += (target.y - state.camera.y) * alpha;
@@ -3570,33 +3582,197 @@
         ctx.fillText(style.label, pu.x, pu.y + 1);
         ctx.restore();
       }
+      const topScorer = state.latestState.players.reduce((max, p) => p.score > max.score ? p : max);
       for (const player of state.latestState.players) {
         const pos = interp.get(player.id) ?? { x: player.x, y: player.y };
         const isLocal = player.id === state.localPlayerId;
         const isStunned = player.stunned;
+        const isTopScorer = player.id === topScorer.id && topScorer.score > 0;
         ctx.save();
         if (isStunned) ctx.globalAlpha = 0.45;
         const tailLen = player.tail.length;
+        if (isTopScorer) {
+          ctx.shadowColor = player.color;
+          ctx.shadowBlur = 8;
+        }
         for (let ti = 0; ti < tailLen; ti++) {
           const seg = player.tail[ti];
           const fadeFrac = tailLen > 1 ? ti / (tailLen - 1) : 0;
+          const segRadius = CONFIG.TAIL_SEGMENT_RADIUS * lerp(1, 0.6, fadeFrac);
           const baseAlpha = isStunned ? 0.25 : lerp(0.75, 0.25, fadeFrac);
           ctx.globalAlpha = baseAlpha;
           ctx.beginPath();
-          ctx.arc(seg.x, seg.y, CONFIG.TAIL_SEGMENT_RADIUS * lerp(1, 0.6, fadeFrac), 0, Math.PI * 2);
+          ctx.arc(seg.x, seg.y, segRadius, 0, Math.PI * 2);
           ctx.fillStyle = player.color;
           ctx.fill();
+          if (isTopScorer) {
+            ctx.globalAlpha = 0.35;
+            const glowPulse = 0.6 + 0.4 * Math.sin(now * 4e-3 + ti * 0.15);
+            ctx.strokeStyle = "#f59e0b";
+            ctx.lineWidth = 1.2;
+            ctx.beginPath();
+            ctx.arc(seg.x, seg.y, segRadius + 8, 0, Math.PI * 2);
+            ctx.stroke();
+          }
         }
+        ctx.shadowBlur = 0;
         ctx.globalAlpha = isStunned ? 0.45 : 1;
         ctx.shadowColor = player.color;
-        ctx.shadowBlur = isLocal ? 18 : 8;
+        ctx.shadowBlur = isTopScorer ? 30 : isLocal ? 18 : 8;
         ctx.beginPath();
         ctx.arc(pos.x, pos.y, CONFIG.PLAYER_RADIUS, 0, Math.PI * 2);
         ctx.fillStyle = player.color;
         ctx.fill();
+        const hashCode = player.id.charCodeAt(0) + player.id.charCodeAt(player.id.length - 1);
+        const faceStyle = Math.abs(hashCode) % 5;
+        const tongueColor = ["#ff69b4", "#00ff00", "#ffff00", "#ff6347", "#9370db"][Math.abs(hashCode) % 5];
+        const eyeOffsetX = CONFIG.PLAYER_RADIUS * 0.35;
+        const eyeOffsetY = CONFIG.PLAYER_RADIUS * 0.25;
+        const eyeRadius = CONFIG.PLAYER_RADIUS * 0.22;
+        const eyePupilRadius = CONFIG.PLAYER_RADIUS * 0.1;
+        const moveDir = player.facingAngle ?? 0;
+        const pupilOffsetX = Math.cos(moveDir) * eyePupilRadius * 0.5;
+        const pupilOffsetY = Math.sin(moveDir) * eyePupilRadius * 0.5;
+        if (faceStyle === 0 || faceStyle === 1) {
+          ctx.fillStyle = "#ffffff";
+          ctx.beginPath();
+          ctx.arc(pos.x - eyeOffsetX, pos.y - eyeOffsetY, eyeRadius, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.beginPath();
+          ctx.arc(pos.x + eyeOffsetX, pos.y - eyeOffsetY, eyeRadius, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.fillStyle = "#000000";
+          ctx.beginPath();
+          ctx.arc(pos.x - eyeOffsetX + pupilOffsetX, pos.y - eyeOffsetY + pupilOffsetY, eyePupilRadius, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.beginPath();
+          ctx.arc(pos.x + eyeOffsetX + pupilOffsetX, pos.y - eyeOffsetY + pupilOffsetY, eyePupilRadius, 0, Math.PI * 2);
+          ctx.fill();
+        } else if (faceStyle === 2) {
+          ctx.fillStyle = "#ffffff";
+          ctx.beginPath();
+          ctx.ellipse(pos.x - eyeOffsetX, pos.y - eyeOffsetY, eyeRadius, eyeRadius * 0.4, 0, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.beginPath();
+          ctx.ellipse(pos.x + eyeOffsetX, pos.y - eyeOffsetY, eyeRadius, eyeRadius * 0.4, 0, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.fillStyle = "#000000";
+          ctx.beginPath();
+          ctx.arc(pos.x - eyeOffsetX, pos.y - eyeOffsetY, eyePupilRadius * 0.8, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.beginPath();
+          ctx.arc(pos.x + eyeOffsetX, pos.y - eyeOffsetY, eyePupilRadius * 0.8, 0, Math.PI * 2);
+          ctx.fill();
+        } else if (faceStyle === 3) {
+          ctx.fillStyle = "#ffffff";
+          ctx.beginPath();
+          ctx.arc(pos.x - eyeOffsetX, pos.y - eyeOffsetY, eyeRadius * 1.3, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.beginPath();
+          ctx.arc(pos.x + eyeOffsetX, pos.y - eyeOffsetY, eyeRadius * 1.3, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.fillStyle = "#000000";
+          ctx.beginPath();
+          ctx.arc(pos.x - eyeOffsetX + pupilOffsetX, pos.y - eyeOffsetY + pupilOffsetY, eyePupilRadius * 1.2, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.beginPath();
+          ctx.arc(pos.x + eyeOffsetX + pupilOffsetX, pos.y - eyeOffsetY + pupilOffsetY, eyePupilRadius * 1.2, 0, Math.PI * 2);
+          ctx.fill();
+        } else {
+          ctx.strokeStyle = "#000000";
+          ctx.lineWidth = 3;
+          const eyeSize = eyeRadius * 0.7;
+          ctx.beginPath();
+          ctx.moveTo(pos.x - eyeOffsetX - eyeSize, pos.y - eyeOffsetY - eyeSize);
+          ctx.lineTo(pos.x - eyeOffsetX + eyeSize, pos.y - eyeOffsetY + eyeSize);
+          ctx.stroke();
+          ctx.beginPath();
+          ctx.moveTo(pos.x - eyeOffsetX + eyeSize, pos.y - eyeOffsetY - eyeSize);
+          ctx.lineTo(pos.x - eyeOffsetX - eyeSize, pos.y - eyeOffsetY + eyeSize);
+          ctx.stroke();
+          ctx.beginPath();
+          ctx.moveTo(pos.x + eyeOffsetX - eyeSize, pos.y - eyeOffsetY - eyeSize);
+          ctx.lineTo(pos.x + eyeOffsetX + eyeSize, pos.y - eyeOffsetY + eyeSize);
+          ctx.stroke();
+          ctx.beginPath();
+          ctx.moveTo(pos.x + eyeOffsetX + eyeSize, pos.y - eyeOffsetY - eyeSize);
+          ctx.lineTo(pos.x + eyeOffsetX - eyeSize, pos.y - eyeOffsetY + eyeSize);
+          ctx.stroke();
+        }
+        const tongueWave = Math.sin(now * 8e-3) * 0.3 + 1;
+        ctx.fillStyle = tongueColor;
+        if (faceStyle === 0 || faceStyle === 4) {
+          ctx.beginPath();
+          ctx.ellipse(pos.x, pos.y + CONFIG.PLAYER_RADIUS * 0.6, CONFIG.PLAYER_RADIUS * 0.25, CONFIG.PLAYER_RADIUS * 0.35 * tongueWave, 0, 0, Math.PI * 2);
+          ctx.fill();
+        } else if (faceStyle === 1) {
+          ctx.beginPath();
+          ctx.moveTo(pos.x, pos.y + CONFIG.PLAYER_RADIUS * 0.5);
+          ctx.lineTo(pos.x - CONFIG.PLAYER_RADIUS * 0.2, pos.y + CONFIG.PLAYER_RADIUS * 0.8 * tongueWave);
+          ctx.lineTo(pos.x, pos.y + CONFIG.PLAYER_RADIUS * 0.6 * tongueWave);
+          ctx.fill();
+          ctx.beginPath();
+          ctx.moveTo(pos.x, pos.y + CONFIG.PLAYER_RADIUS * 0.5);
+          ctx.lineTo(pos.x + CONFIG.PLAYER_RADIUS * 0.2, pos.y + CONFIG.PLAYER_RADIUS * 0.8 * tongueWave);
+          ctx.lineTo(pos.x, pos.y + CONFIG.PLAYER_RADIUS * 0.6 * tongueWave);
+          ctx.fill();
+        } else if (faceStyle === 2) {
+          for (let i = 0; i < 3; i++) {
+            const spiralX = Math.cos(now * 6e-3 + i) * CONFIG.PLAYER_RADIUS * 0.15;
+            const spiralY = pos.y + CONFIG.PLAYER_RADIUS * 0.5 + i * CONFIG.PLAYER_RADIUS * 0.15;
+            ctx.beginPath();
+            ctx.arc(pos.x + spiralX, spiralY, CONFIG.PLAYER_RADIUS * 0.12, 0, Math.PI * 2);
+            ctx.fill();
+          }
+        } else {
+          ctx.beginPath();
+          ctx.arc(pos.x, pos.y + CONFIG.PLAYER_RADIUS * 0.6 * tongueWave, CONFIG.PLAYER_RADIUS * 0.25, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.strokeStyle = "#000000";
+        ctx.lineWidth = 2;
+        if (faceStyle === 0) {
+          ctx.beginPath();
+          ctx.arc(pos.x, pos.y + CONFIG.PLAYER_RADIUS * 0.2, CONFIG.PLAYER_RADIUS * 0.3, 0, Math.PI, false);
+          ctx.stroke();
+        } else if (faceStyle === 1) {
+          ctx.beginPath();
+          ctx.arc(pos.x, pos.y + CONFIG.PLAYER_RADIUS * 0.25, CONFIG.PLAYER_RADIUS * 0.25, 0, Math.PI * 2);
+          ctx.stroke();
+        } else if (faceStyle === 2) {
+          ctx.beginPath();
+          ctx.moveTo(pos.x - CONFIG.PLAYER_RADIUS * 0.25, pos.y + CONFIG.PLAYER_RADIUS * 0.15);
+          ctx.quadraticCurveTo(pos.x - CONFIG.PLAYER_RADIUS * 0.15, pos.y + CONFIG.PLAYER_RADIUS * 0.35, pos.x, pos.y + CONFIG.PLAYER_RADIUS * 0.15);
+          ctx.quadraticCurveTo(pos.x + CONFIG.PLAYER_RADIUS * 0.15, pos.y + CONFIG.PLAYER_RADIUS * 0.35, pos.x + CONFIG.PLAYER_RADIUS * 0.25, pos.y + CONFIG.PLAYER_RADIUS * 0.15);
+          ctx.stroke();
+        } else if (faceStyle === 3) {
+          ctx.beginPath();
+          ctx.arc(pos.x, pos.y + CONFIG.PLAYER_RADIUS * 0.2, CONFIG.PLAYER_RADIUS * 0.3, Math.PI, 0, true);
+          ctx.stroke();
+        } else {
+          ctx.beginPath();
+          ctx.arc(pos.x, pos.y + CONFIG.PLAYER_RADIUS * 0.2, CONFIG.PLAYER_RADIUS * 0.2, 0, Math.PI * 2);
+          ctx.stroke();
+        }
         if (isLocal) {
           ctx.strokeStyle = "#fff";
           ctx.lineWidth = 2.5;
+          ctx.stroke();
+        }
+        if (isTopScorer) {
+          const pulse1 = 0.5 + 0.5 * Math.sin(now * 4e-3);
+          ctx.globalAlpha = pulse1 * 0.3;
+          ctx.strokeStyle = "#d97706";
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          ctx.arc(pos.x, pos.y, CONFIG.PLAYER_RADIUS + 28, 0, Math.PI * 2);
+          ctx.stroke();
+          const pulse2 = 0.7 + 0.3 * Math.sin(now * 5e-3);
+          ctx.globalAlpha = pulse2 * 0.4;
+          ctx.strokeStyle = "#f59e0b";
+          ctx.lineWidth = 1.5;
+          ctx.beginPath();
+          ctx.arc(pos.x, pos.y, CONFIG.PLAYER_RADIUS + 12, 0, Math.PI * 2);
           ctx.stroke();
         }
         if (isStunned) {
@@ -3628,6 +3804,7 @@
       ctx.restore();
       drawHUD(ctx, canvas2, state.latestState, state.localPlayerId);
       drawActiveEffects(ctx, canvas2, state.latestState, state.localPlayerId);
+      drawSprintBar(ctx, canvas2, state.latestState, state.localPlayerId, now);
     }
     requestAnimationFrame(frame);
   }
@@ -3728,6 +3905,51 @@
     ctx.fillText("MAP", mx + 4, my - 3);
     ctx.restore();
   }
+  function drawSprintBar(ctx, canvas2, state, localId, now) {
+    if (!localId) return;
+    const player = state.players.find((p) => p.id === localId);
+    if (!player) return;
+    const stamina = player.stamina ?? CONFIG.SPRINT_MAX_STAMINA;
+    const fraction = Math.max(0, Math.min(1, stamina / CONFIG.SPRINT_MAX_STAMINA));
+    const BAR_W = 220;
+    const BAR_H = 14;
+    const MARGIN = 14;
+    const bx = canvas2.width / 2 - BAR_W / 2;
+    const by = canvas2.height - MARGIN - BAR_H;
+    const radius = BAR_H / 2;
+    ctx.save();
+    ctx.globalAlpha = 0.65;
+    ctx.fillStyle = "#0d0d1a";
+    roundRect(ctx, bx, by, BAR_W, BAR_H, radius);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+    let fillColor;
+    if (fraction > 0.5) {
+      fillColor = "#38bdf8";
+    } else if (fraction > 0.2) {
+      fillColor = "#fb923c";
+    } else {
+      const flash = 0.6 + 0.4 * Math.sin(now * 0.015);
+      ctx.globalAlpha = flash;
+      fillColor = "#ef4444";
+    }
+    if (fraction > 0) {
+      const fillW = Math.max(BAR_H, (BAR_W - 2) * fraction);
+      ctx.fillStyle = fillColor;
+      ctx.shadowColor = fillColor;
+      ctx.shadowBlur = 8;
+      roundRect(ctx, bx + 1, by + 1, fillW, BAR_H - 2, radius - 1);
+      ctx.fill();
+      ctx.shadowBlur = 0;
+    }
+    ctx.globalAlpha = 1;
+    ctx.font = 'bold 9px "Segoe UI", system-ui, sans-serif';
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillStyle = fraction > 0.3 ? "#000" : "#fff";
+    ctx.fillText("SPRINT  [SPACE]", canvas2.width / 2, by + BAR_H / 2);
+    ctx.restore();
+  }
   function roundRect(ctx, x, y, w, h, r) {
     ctx.beginPath();
     ctx.moveTo(x + r, y);
@@ -3766,7 +3988,7 @@
     const PILL_H = 30;
     const GAP = 8;
     const startX = canvas2.width / 2 - PILL_W / 2;
-    const startY = canvas2.height - 16 - effects.length * (PILL_H + GAP);
+    const startY = canvas2.height - 50 - effects.length * (PILL_H + GAP);
     ctx.save();
     effects.forEach((fx, i) => {
       const y = startY + i * (PILL_H + GAP);
@@ -3872,6 +4094,12 @@
       rendererState.latestState = state;
       rendererState.lastStateTime = Date.now();
     });
+    socket.on("scammed", (data) => {
+      rendererState.scamPopup = {
+        startTime: Date.now(),
+        disguisedAs: data.disguisedAs
+      };
+    });
     socket.on("disconnect", () => {
       disconnectedOverlay.classList.add("visible");
     });
@@ -3890,7 +4118,7 @@
   rejoinBtn.addEventListener("click", () => {
     location.reload();
   });
-  var keys = { up: false, down: false, left: false, right: false };
+  var keys = { up: false, down: false, left: false, right: false, sprint: false };
   function setupInput() {
     window.addEventListener("keydown", onKey);
     window.addEventListener("keyup", onKey);
@@ -3899,7 +4127,7 @@
     if (!socket) return;
     const pressed = e.type === "keydown";
     let changed = false;
-    if (["w", "a", "s", "d"].includes(e.key.toLowerCase())) {
+    if (["w", "a", "s", "d", " "].includes(e.key.toLowerCase())) {
       e.preventDefault();
     }
     switch (e.key.toLowerCase()) {
@@ -3928,6 +4156,12 @@
       case "arrowright":
         if (keys.right !== pressed) {
           keys.right = pressed;
+          changed = true;
+        }
+        break;
+      case " ":
+        if (keys.sprint !== pressed) {
+          keys.sprint = pressed;
           changed = true;
         }
         break;

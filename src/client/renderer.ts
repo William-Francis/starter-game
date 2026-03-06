@@ -7,6 +7,11 @@ const POWERUP_STYLE: Record<string, { color: string; label: string }> = {
   reverse:      { color: '#22d3ee', label: '↩' },
 };
 
+export interface ScamPopup {
+  startTime: number;
+  disguisedAs: string;
+}
+
 export interface RendererState {
   localPlayerId: string | null;
   latestState: GameStatePayload | null;
@@ -15,6 +20,7 @@ export interface RendererState {
   stunFlash: Map<string, number>; // playerId -> stun start time
   camera: Vec2;           // smoothed camera position
   lastFrameTime: number;  // for delta-time camera lerp
+  scamPopup: ScamPopup | null; // active scam popup
 }
 
 const GRID_SIZE = 100;
@@ -32,6 +38,7 @@ export function createRendererState(): RendererState {
     stunFlash: new Map(),
     camera: { x: CONFIG.ARENA_WIDTH / 2, y: CONFIG.ARENA_HEIGHT / 2 },
     lastFrameTime: Date.now(),
+    scamPopup: null,
   };
 }
 
@@ -95,7 +102,7 @@ export function startRenderLoop(
     const frameNow = Date.now();
     const dt = Math.min((frameNow - state.lastFrameTime) / 1000, 0.1); // cap at 100ms
     state.lastFrameTime = frameNow;
-    const CAMERA_SPEED = 8; // higher = snappier, lower = floatier
+    const CAMERA_SPEED = 10; // higher = snappier, lower = floatier
     const alpha = 1 - Math.exp(-CAMERA_SPEED * dt);
     state.camera.x += (target.x - state.camera.x) * alpha;
     state.camera.y += (target.y - state.camera.y) * alpha;
@@ -184,35 +191,60 @@ export function startRenderLoop(
       ctx.fillText(style.label, pu.x, pu.y + 1);
       ctx.restore();
  }
+    // ── Find top scorer ─────────────────────────────────────────────────
+    const topScorer = state.latestState.players.reduce((max, p) => p.score > max.score ? p : max);
+
     // ── Players ──────────────────────────────────────────────────────────
     for (const player of state.latestState.players) {
       const pos = interp.get(player.id) ?? { x: player.x, y: player.y };
       const isLocal = player.id === state.localPlayerId;
       const isStunned = player.stunned;
+      const isTopScorer = player.id === topScorer.id && topScorer.score > 0;
 
       ctx.save();
       if (isStunned) ctx.globalAlpha = 0.45;
 
       // Tail segments (draw before head) — fade toward tip
       const tailLen = player.tail.length;
+      
+      // Set shadow for entire tail if top scorer
+      if (isTopScorer) {
+        ctx.shadowColor = player.color;
+        ctx.shadowBlur = 8;
+      }
+      
       for (let ti = 0; ti < tailLen; ti++) {
         const seg = player.tail[ti];
         // ti=0 is closest to head (brightest), ti=tailLen-1 is tip (most faded)
         const fadeFrac = tailLen > 1 ? ti / (tailLen - 1) : 0;
+        const segRadius = CONFIG.TAIL_SEGMENT_RADIUS * lerp(1, 0.6, fadeFrac);
         const baseAlpha = isStunned ? 0.25 : lerp(0.75, 0.25, fadeFrac);
+        
         ctx.globalAlpha = baseAlpha;
         ctx.beginPath();
-        ctx.arc(seg.x, seg.y, CONFIG.TAIL_SEGMENT_RADIUS * lerp(1, 0.6, fadeFrac), 0, Math.PI * 2);
+        ctx.arc(seg.x, seg.y, segRadius, 0, Math.PI * 2);
         ctx.fillStyle = player.color;
         ctx.fill();
+        
+        // Glow ring for top scorer
+        if (isTopScorer) {
+          ctx.globalAlpha = 0.35;
+          const glowPulse = 0.6 + 0.4 * Math.sin(now * 0.004 + ti * 0.15);
+          ctx.strokeStyle = '#f59e0b';
+          ctx.lineWidth = 1.2;
+          ctx.beginPath();
+          ctx.arc(seg.x, seg.y, segRadius + 8, 0, Math.PI * 2);
+          ctx.stroke();
+        }
       }
+      ctx.shadowBlur = 0;
 
       // Reset alpha for head
       ctx.globalAlpha = isStunned ? 0.45 : 1;
 
       // Head shadow / glow
       ctx.shadowColor = player.color;
-      ctx.shadowBlur = isLocal ? 18 : 8;
+      ctx.shadowBlur = isTopScorer ? 30 : (isLocal ? 18 : 8);
 
       // Head circle
       ctx.beginPath();
@@ -220,10 +252,194 @@ export function startRenderLoop(
       ctx.fillStyle = player.color;
       ctx.fill();
 
+      // Deterministic random face based on player ID
+      const hashCode = player.id.charCodeAt(0) + player.id.charCodeAt(player.id.length - 1);
+      const faceStyle = Math.abs(hashCode) % 5;
+      const tongueColor = ['#ff69b4', '#00ff00', '#ffff00', '#ff6347', '#9370db'][Math.abs(hashCode) % 5];
+      
+      // Draw funny face variations
+      const eyeOffsetX = CONFIG.PLAYER_RADIUS * 0.35;
+      const eyeOffsetY = CONFIG.PLAYER_RADIUS * 0.25;
+      const eyeRadius = CONFIG.PLAYER_RADIUS * 0.22;
+      const eyePupilRadius = CONFIG.PLAYER_RADIUS * 0.1;
+
+      // Eyes (with pupils that follow movement direction)
+      const moveDir = player.facingAngle ?? 0;
+      const pupilOffsetX = Math.cos(moveDir) * eyePupilRadius * 0.5;
+      const pupilOffsetY = Math.sin(moveDir) * eyePupilRadius * 0.5;
+
+      // Draw eyes based on face style
+      if (faceStyle === 0 || faceStyle === 1) {
+        // Normal eyes with pupils
+        ctx.fillStyle = '#ffffff';
+        ctx.beginPath();
+        ctx.arc(pos.x - eyeOffsetX, pos.y - eyeOffsetY, eyeRadius, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.beginPath();
+        ctx.arc(pos.x + eyeOffsetX, pos.y - eyeOffsetY, eyeRadius, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.fillStyle = '#000000';
+        ctx.beginPath();
+        ctx.arc(pos.x - eyeOffsetX + pupilOffsetX, pos.y - eyeOffsetY + pupilOffsetY, eyePupilRadius, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.beginPath();
+        ctx.arc(pos.x + eyeOffsetX + pupilOffsetX, pos.y - eyeOffsetY + pupilOffsetY, eyePupilRadius, 0, Math.PI * 2);
+        ctx.fill();
+      } else if (faceStyle === 2) {
+        // Squinting/derpy eyes
+        ctx.fillStyle = '#ffffff';
+        ctx.beginPath();
+        ctx.ellipse(pos.x - eyeOffsetX, pos.y - eyeOffsetY, eyeRadius, eyeRadius * 0.4, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.beginPath();
+        ctx.ellipse(pos.x + eyeOffsetX, pos.y - eyeOffsetY, eyeRadius, eyeRadius * 0.4, 0, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.fillStyle = '#000000';
+        ctx.beginPath();
+        ctx.arc(pos.x - eyeOffsetX, pos.y - eyeOffsetY, eyePupilRadius * 0.8, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.beginPath();
+        ctx.arc(pos.x + eyeOffsetX, pos.y - eyeOffsetY, eyePupilRadius * 0.8, 0, Math.PI * 2);
+        ctx.fill();
+      } else if (faceStyle === 3) {
+        // Wide crazy eyes
+        ctx.fillStyle = '#ffffff';
+        ctx.beginPath();
+        ctx.arc(pos.x - eyeOffsetX, pos.y - eyeOffsetY, eyeRadius * 1.3, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.beginPath();
+        ctx.arc(pos.x + eyeOffsetX, pos.y - eyeOffsetY, eyeRadius * 1.3, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.fillStyle = '#000000';
+        ctx.beginPath();
+        ctx.arc(pos.x - eyeOffsetX + pupilOffsetX, pos.y - eyeOffsetY + pupilOffsetY, eyePupilRadius * 1.2, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.beginPath();
+        ctx.arc(pos.x + eyeOffsetX + pupilOffsetX, pos.y - eyeOffsetY + pupilOffsetY, eyePupilRadius * 1.2, 0, Math.PI * 2);
+        ctx.fill();
+      } else {
+        // X eyes
+        ctx.strokeStyle = '#000000';
+        ctx.lineWidth = 3;
+        const eyeSize = eyeRadius * 0.7;
+        // Left X
+        ctx.beginPath();
+        ctx.moveTo(pos.x - eyeOffsetX - eyeSize, pos.y - eyeOffsetY - eyeSize);
+        ctx.lineTo(pos.x - eyeOffsetX + eyeSize, pos.y - eyeOffsetY + eyeSize);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(pos.x - eyeOffsetX + eyeSize, pos.y - eyeOffsetY - eyeSize);
+        ctx.lineTo(pos.x - eyeOffsetX - eyeSize, pos.y - eyeOffsetY + eyeSize);
+        ctx.stroke();
+        // Right X
+        ctx.beginPath();
+        ctx.moveTo(pos.x + eyeOffsetX - eyeSize, pos.y - eyeOffsetY - eyeSize);
+        ctx.lineTo(pos.x + eyeOffsetX + eyeSize, pos.y - eyeOffsetY + eyeSize);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(pos.x + eyeOffsetX + eyeSize, pos.y - eyeOffsetY - eyeSize);
+        ctx.lineTo(pos.x + eyeOffsetX - eyeSize, pos.y - eyeOffsetY + eyeSize);
+        ctx.stroke();
+      }
+
+      // Tongue sticking out (random colors and shapes)
+      const tongueWave = Math.sin(now * 0.008) * 0.3 + 1;
+      ctx.fillStyle = tongueColor;
+
+      if (faceStyle === 0 || faceStyle === 4) {
+        // Regular wavy tongue
+        ctx.beginPath();
+        ctx.ellipse(pos.x, pos.y + CONFIG.PLAYER_RADIUS * 0.6, CONFIG.PLAYER_RADIUS * 0.25, CONFIG.PLAYER_RADIUS * 0.35 * tongueWave, 0, 0, Math.PI * 2);
+        ctx.fill();
+      } else if (faceStyle === 1) {
+        // Forked tongue
+        ctx.beginPath();
+        ctx.moveTo(pos.x, pos.y + CONFIG.PLAYER_RADIUS * 0.5);
+        ctx.lineTo(pos.x - CONFIG.PLAYER_RADIUS * 0.2, pos.y + CONFIG.PLAYER_RADIUS * 0.8 * tongueWave);
+        ctx.lineTo(pos.x, pos.y + CONFIG.PLAYER_RADIUS * 0.6 * tongueWave);
+        ctx.fill();
+        ctx.beginPath();
+        ctx.moveTo(pos.x, pos.y + CONFIG.PLAYER_RADIUS * 0.5);
+        ctx.lineTo(pos.x + CONFIG.PLAYER_RADIUS * 0.2, pos.y + CONFIG.PLAYER_RADIUS * 0.8 * tongueWave);
+        ctx.lineTo(pos.x, pos.y + CONFIG.PLAYER_RADIUS * 0.6 * tongueWave);
+        ctx.fill();
+      } else if (faceStyle === 2) {
+        // Spiraling spiral tongue
+        for (let i = 0; i < 3; i++) {
+          const spiralX = Math.cos(now * 0.006 + i) * CONFIG.PLAYER_RADIUS * 0.15;
+          const spiralY = pos.y + CONFIG.PLAYER_RADIUS * 0.5 + i * CONFIG.PLAYER_RADIUS * 0.15;
+          ctx.beginPath();
+          ctx.arc(pos.x + spiralX, spiralY, CONFIG.PLAYER_RADIUS * 0.12, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      } else {
+        // Bouncy round tongue
+        ctx.beginPath();
+        ctx.arc(pos.x, pos.y + CONFIG.PLAYER_RADIUS * 0.6 * tongueWave, CONFIG.PLAYER_RADIUS * 0.25, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      // Different mouth expressions
+      ctx.strokeStyle = '#000000';
+      ctx.lineWidth = 2;
+
+      if (faceStyle === 0) {
+        // Happy smile
+        ctx.beginPath();
+        ctx.arc(pos.x, pos.y + CONFIG.PLAYER_RADIUS * 0.2, CONFIG.PLAYER_RADIUS * 0.3, 0, Math.PI, false);
+        ctx.stroke();
+      } else if (faceStyle === 1) {
+        // Big open mouth O
+        ctx.beginPath();
+        ctx.arc(pos.x, pos.y + CONFIG.PLAYER_RADIUS * 0.25, CONFIG.PLAYER_RADIUS * 0.25, 0, Math.PI * 2);
+        ctx.stroke();
+      } else if (faceStyle === 2) {
+        // W mouth (confused)
+        ctx.beginPath();
+        ctx.moveTo(pos.x - CONFIG.PLAYER_RADIUS * 0.25, pos.y + CONFIG.PLAYER_RADIUS * 0.15);
+        ctx.quadraticCurveTo(pos.x - CONFIG.PLAYER_RADIUS * 0.15, pos.y + CONFIG.PLAYER_RADIUS * 0.35, pos.x, pos.y + CONFIG.PLAYER_RADIUS * 0.15);
+        ctx.quadraticCurveTo(pos.x + CONFIG.PLAYER_RADIUS * 0.15, pos.y + CONFIG.PLAYER_RADIUS * 0.35, pos.x + CONFIG.PLAYER_RADIUS * 0.25, pos.y + CONFIG.PLAYER_RADIUS * 0.15);
+        ctx.stroke();
+      } else if (faceStyle === 3) {
+        // Angry frown
+        ctx.beginPath();
+        ctx.arc(pos.x, pos.y + CONFIG.PLAYER_RADIUS * 0.2, CONFIG.PLAYER_RADIUS * 0.3, Math.PI, 0, true);
+        ctx.stroke();
+      } else {
+        // Shocked/surprised
+        ctx.beginPath();
+        ctx.arc(pos.x, pos.y + CONFIG.PLAYER_RADIUS * 0.2, CONFIG.PLAYER_RADIUS * 0.2, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+
       // Border ring for local player
       if (isLocal) {
         ctx.strokeStyle = '#fff';
         ctx.lineWidth = 2.5;
+        ctx.stroke();
+      }
+
+      // Enhanced golden glow rings for top scorer
+      if (isTopScorer) {
+        // Outer glow ring (larger, more transparent)
+        const pulse1 = 0.5 + 0.5 * Math.sin(now * 0.004);
+        ctx.globalAlpha = pulse1 * 0.3;
+        ctx.strokeStyle = '#d97706';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.arc(pos.x, pos.y, CONFIG.PLAYER_RADIUS + 28, 0, Math.PI * 2);
+        ctx.stroke();
+
+        // Inner glow ring (brighter, tighter)
+        const pulse2 = 0.7 + 0.3 * Math.sin(now * 0.005);
+        ctx.globalAlpha = pulse2 * 0.4;
+        ctx.strokeStyle = '#f59e0b';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.arc(pos.x, pos.y, CONFIG.PLAYER_RADIUS + 12, 0, Math.PI * 2);
         ctx.stroke();
       }
 
@@ -269,7 +485,8 @@ export function startRenderLoop(
 
     // ── HUD (fixed screen-space) ─────────────────────────────────────────
     drawHUD(ctx, canvas, state.latestState, state.localPlayerId);
-  drawActiveEffects(ctx, canvas, state.latestState, state.localPlayerId);
+    drawActiveEffects(ctx, canvas, state.latestState, state.localPlayerId);
+    drawSprintBar(ctx, canvas, state.latestState, state.localPlayerId, now);
   }
 
   requestAnimationFrame(frame);
@@ -409,6 +626,71 @@ function drawMinimap(
   ctx.restore();
 }
 
+function drawSprintBar(
+  ctx: CanvasRenderingContext2D,
+  canvas: HTMLCanvasElement,
+  state: GameStatePayload,
+  localId: string | null,
+  now: number
+): void {
+  if (!localId) return;
+  const player = state.players.find((p) => p.id === localId);
+  if (!player) return;
+
+  const stamina = player.stamina ?? CONFIG.SPRINT_MAX_STAMINA;
+  const fraction = Math.max(0, Math.min(1, stamina / CONFIG.SPRINT_MAX_STAMINA));
+
+  const BAR_W = 220;
+  const BAR_H = 14;
+  const MARGIN = 14;
+  const bx = canvas.width / 2 - BAR_W / 2;
+  const by = canvas.height - MARGIN - BAR_H;
+  const radius = BAR_H / 2;
+
+  ctx.save();
+
+  // Background track
+  ctx.globalAlpha = 0.65;
+  ctx.fillStyle = '#0d0d1a';
+  roundRect(ctx, bx, by, BAR_W, BAR_H, radius);
+  ctx.fill();
+  ctx.globalAlpha = 1;
+
+  // Fill colour: cyan when healthy, orange when low, flashing red when empty
+  let fillColor: string;
+  if (fraction > 0.5) {
+    fillColor = '#38bdf8'; // sky blue
+  } else if (fraction > 0.2) {
+    fillColor = '#fb923c'; // orange
+  } else {
+    // Flash red when nearly empty
+    const flash = 0.6 + 0.4 * Math.sin(now * 0.015);
+    ctx.globalAlpha = flash;
+    fillColor = '#ef4444';
+  }
+
+  if (fraction > 0) {
+    const fillW = Math.max(BAR_H, (BAR_W - 2) * fraction); // keep at least a cap
+    ctx.fillStyle = fillColor;
+    ctx.shadowColor = fillColor;
+    ctx.shadowBlur = 8;
+    roundRect(ctx, bx + 1, by + 1, fillW, BAR_H - 2, radius - 1);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+  }
+
+  ctx.globalAlpha = 1;
+
+  // Label
+  ctx.font = 'bold 9px "Segoe UI", system-ui, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = fraction > 0.3 ? '#000' : '#fff';
+  ctx.fillText('SPRINT  [SPACE]', canvas.width / 2, by + BAR_H / 2);
+
+  ctx.restore();
+}
+
 function roundRect(
   ctx: CanvasRenderingContext2D,
   x: number, y: number, w: number, h: number, r: number
@@ -460,7 +742,8 @@ function drawActiveEffects(
   const PILL_H = 30;
   const GAP = 8;
   const startX = canvas.width / 2 - PILL_W / 2;
-  const startY = canvas.height - 16 - effects.length * (PILL_H + GAP);
+  // Leave room above the sprint bar (36px reserve at bottom)
+  const startY = canvas.height - 50 - effects.length * (PILL_H + GAP);
 
   ctx.save();
   effects.forEach((fx, i) => {
@@ -491,5 +774,86 @@ function drawActiveEffects(
     ctx.textAlign = 'right';
     ctx.fillText(`${fx.remaining.toFixed(1)}s`, startX + PILL_W - 10, y + PILL_H / 2);
   });
+  ctx.restore();
+}
+
+const SCAM_POPUP_DURATION = 3000; // ms
+
+function drawScamPopup(
+  ctx: CanvasRenderingContext2D,
+  canvas: HTMLCanvasElement,
+  state: RendererState
+): void {
+  if (!state.scamPopup) return;
+
+  const now = Date.now();
+  const elapsed = now - state.scamPopup.startTime;
+
+  // Expire the popup
+  if (elapsed > SCAM_POPUP_DURATION) {
+    state.scamPopup = null;
+    return;
+  }
+
+  const disguiseLabel = POWERUP_STYLE[state.scamPopup.disguisedAs]?.label ?? '?';
+  const disguiseName = state.scamPopup.disguisedAs === 'speed' ? 'Speed Boost' : 'Double Tail';
+
+  // Fade in quickly, hold, then fade out
+  let alpha = 1;
+  if (elapsed < 200) {
+    alpha = elapsed / 200; // fade in
+  } else if (elapsed > SCAM_POPUP_DURATION - 600) {
+    alpha = (SCAM_POPUP_DURATION - elapsed) / 600; // fade out
+  }
+
+  // Shake effect in the first 500ms
+  const shakeX = elapsed < 500 ? (Math.random() - 0.5) * 6 : 0;
+  const shakeY = elapsed < 500 ? (Math.random() - 0.5) * 6 : 0;
+
+  // Scale bounce on entry
+  const scale = elapsed < 300 ? 0.8 + 0.4 * Math.min(1, elapsed / 300) : 1.0 + 0.02 * Math.sin(elapsed * 0.008);
+
+  const BOX_W = 360;
+  const BOX_H = 120;
+  const cx = canvas.width / 2 + shakeX;
+  const cy = canvas.height / 2 - 60 + shakeY;
+
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.translate(cx, cy);
+  ctx.scale(scale, scale);
+  ctx.translate(-cx, -cy);
+
+  // Dark backdrop
+  ctx.fillStyle = 'rgba(0,0,0,0.6)';
+  roundRect(ctx, cx - BOX_W / 2, cy - BOX_H / 2, BOX_W, BOX_H, 16);
+  ctx.fill();
+
+  // Red border
+  ctx.strokeStyle = '#ef4444';
+  ctx.lineWidth = 3;
+  ctx.shadowColor = '#ef4444';
+  ctx.shadowBlur = 20;
+  roundRect(ctx, cx - BOX_W / 2, cy - BOX_H / 2, BOX_W, BOX_H, 16);
+  ctx.stroke();
+  ctx.shadowBlur = 0;
+
+  // Main title
+  ctx.font = 'bold 28px "Segoe UI", system-ui, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = '#ef4444';
+  ctx.fillText('🚨 YOU\'VE BEEN SCAMMED! 🚨', cx, cy - 18);
+
+  // Subtitle
+  ctx.font = '15px "Segoe UI", system-ui, sans-serif';
+  ctx.fillStyle = '#facc15';
+  ctx.fillText(`That ${disguiseLabel} ${disguiseName} was actually  ↩ Reverse!`, cx, cy + 16);
+
+  // Bottom text
+  ctx.font = 'italic 12px "Segoe UI", system-ui, sans-serif';
+  ctx.fillStyle = '#aaa';
+  ctx.fillText('Your controls are now reversed...', cx, cy + 42);
+
   ctx.restore();
 }

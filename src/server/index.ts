@@ -70,6 +70,7 @@ io.on('connection', (socket) => {
         down: !!input.down,
         left: !!input.left,
         right: !!input.right,
+        sprint: !!input.sprint,
       };
     }
   });

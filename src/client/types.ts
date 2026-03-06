@@ -17,6 +17,8 @@ export interface ClientPlayer {
   stunnedUntil: number;
   speedBoostUntil: number;
   reversedUntil: number;
+  stamina: number;
+  facingAngle: number;
 }
 
 export interface ClientFood {

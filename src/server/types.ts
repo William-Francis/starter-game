@@ -10,6 +10,7 @@ export interface InputState {
   down: boolean;
   left: boolean;
   right: boolean;
+  sprint: boolean;
 }
 
 // ─── Server-side (mutable, full detail) ────────────────────────────────────
@@ -30,12 +31,15 @@ export interface ServerPlayer {
   spawnImmunityUntil: number;
   speedBoostUntil: number;
   reversedUntil: number;
+  stamina: number;
 }
 
 export interface ServerPowerup {
   id: number;
   type: PowerupType;
+  disguiseType?: PowerupType; // for reverse powerups that masquerade as another type
   position: Vec2;
+  spawnedAt: number;
 }
 
 export interface ServerFood {
@@ -57,6 +61,8 @@ export interface ClientPlayer {
   stunnedUntil: number;
   speedBoostUntil: number;
   reversedUntil: number;
+  stamina: number;
+  facingAngle: number;    // radians, derived from facing vector
 }
 
 export interface ClientFood {
