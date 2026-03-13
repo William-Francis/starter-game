@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Arena Game</title>
+    <title>Snakealot Game</title>
     <style>
       * {
         margin: 0;
@@ -161,13 +161,373 @@
         font-size: 1rem;
         cursor: pointer;
       }
+
+      /* ── Snakes on a Plane Easter Egg ── */
+      #plane-flyby {
+        position: fixed;
+        top: 33%;
+        left: 0;
+        transform: translateX(110vw);
+        display: flex;
+        flex-direction: row;
+        align-items: center;
+        z-index: 9999;
+        pointer-events: none;
+        will-change: transform;
+      }
+
+      #plane-flyby.flying {
+        animation: plane-fly 9s linear forwards;
+      }
+
+      @keyframes plane-fly {
+        from {
+          transform: translateX(110vw);
+        }
+        to {
+          transform: translateX(-130vw);
+        }
+      }
+
+      #plane-icon {
+        font-size: 5rem;
+        display: inline-block;
+        transform: scaleX(-1);
+        filter: drop-shadow(0 4px 14px rgba(0, 0, 0, 0.6));
+        line-height: 1;
+      }
+
+      #plane-banner {
+        position: relative;
+        background: #fbbf24;
+        color: #111;
+        font-family: "Segoe UI", system-ui, sans-serif;
+        font-size: 1.5rem;
+        font-weight: 900;
+        letter-spacing: 0.1em;
+        padding: 10px 22px;
+        border-radius: 6px;
+        border: 3px solid #f59e0b;
+        box-shadow: 0 4px 18px rgba(0, 0, 0, 0.5);
+        white-space: nowrap;
+      }
+
+      #plane-banner::before {
+        content: "";
+        position: absolute;
+        right: 100%;
+        top: 50%;
+        transform: translateY(-50%);
+        width: 44px;
+        height: 3px;
+        background: #f59e0b;
+      }
+
+      /* ── Mobile Controls ── */
+      #mobile-controls {
+        display: none;
+        position: fixed;
+        inset: 0;
+        pointer-events: none;
+        z-index: 5;
+      }
+
+      #mobile-controls.visible {
+        display: block;
+      }
+
+      #joystick-zone {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 60%;
+        height: 100%;
+        pointer-events: all;
+        touch-action: none;
+      }
+
+      #joystick-ring {
+        display: none;
+        position: fixed;
+        width: 130px;
+        height: 130px;
+        border-radius: 50%;
+        background: rgba(255, 255, 255, 0.07);
+        border: 2px solid rgba(255, 255, 255, 0.22);
+        transform: translate(-50%, -50%);
+        pointer-events: none;
+      }
+
+      #joystick-nub {
+        position: absolute;
+        width: 54px;
+        height: 54px;
+        border-radius: 50%;
+        background: rgba(255, 255, 255, 0.3);
+        border: 2px solid rgba(255, 255, 255, 0.55);
+        left: 50%;
+        top: 50%;
+        transform: translate(-50%, -50%);
+      }
+
+      #sprint-btn-mobile {
+        position: fixed;
+        bottom: 44px;
+        right: 32px;
+        width: 84px;
+        height: 84px;
+        border-radius: 50%;
+        background: rgba(56, 189, 248, 0.18);
+        border: 2.5px solid rgba(56, 189, 248, 0.45);
+        color: #38bdf8;
+        font-size: 1.6rem;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 2px;
+        pointer-events: all;
+        touch-action: none;
+        user-select: none;
+        -webkit-user-select: none;
+        cursor: pointer;
+        transition:
+          background 0.1s,
+          border-color 0.1s,
+          box-shadow 0.1s;
+      }
+
+      #sprint-btn-mobile span {
+        font-size: 0.5rem;
+        letter-spacing: 0.08em;
+        font-weight: 700;
+        color: #7dd3fc;
+      }
+
+      #sprint-btn-mobile.active {
+        background: rgba(56, 189, 248, 0.45);
+        border-color: #38bdf8;
+        box-shadow: 0 0 18px rgba(56, 189, 248, 0.45);
+      }
+
+      /* ── HUD Toggle Buttons ── */
+      .hud-toggle {
+        display: none;
+        position: fixed;
+        z-index: 6;
+        background: rgba(13, 13, 26, 0.78);
+        color: #aaa;
+        border: 1px solid rgba(255, 255, 255, 0.13);
+        border-radius: 6px;
+        font-size: 0.7rem;
+        font-weight: 700;
+        letter-spacing: 0.06em;
+        padding: 4px 9px;
+        cursor: pointer;
+        user-select: none;
+        -webkit-user-select: none;
+        transition:
+          color 0.15s,
+          background 0.15s,
+          border-color 0.15s;
+        touch-action: manipulation;
+      }
+
+      .hud-toggle:hover {
+        color: #fff;
+        background: rgba(255, 255, 255, 0.1);
+        border-color: rgba(255, 255, 255, 0.28);
+      }
+
+      .hud-toggle.visible {
+        display: block;
+      }
+
+      #toggle-scoreboard {
+        top: 16px;
+        right: 16px;
+      }
+
+      #toggle-minimap {
+        bottom: 192px;
+        right: 16px;
+      }
+
+      /* ── Death / Stats Card ── */
+      #death-card {
+        display: none;
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.6);
+        align-items: center;
+        justify-content: center;
+        z-index: 15;
+        animation: fade-in 0.18s ease;
+      }
+
+      #death-card.visible {
+        display: flex;
+      }
+
+      @keyframes fade-in {
+        from {
+          opacity: 0;
+          transform: scale(0.95);
+        }
+        to {
+          opacity: 1;
+          transform: scale(1);
+        }
+      }
+
+      #death-card-inner {
+        background: #12121e;
+        border: 1px solid #2e2e50;
+        border-radius: 18px;
+        padding: 32px 40px;
+        min-width: 310px;
+        max-width: 480px;
+        width: 90%;
+        text-align: center;
+      }
+
+      #death-card-inner h2 {
+        font-size: 1.9rem;
+        margin-bottom: 6px;
+      }
+
+      #death-card-inner .subtitle {
+        font-size: 0.85rem;
+        color: #666;
+        margin-bottom: 24px;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+      }
+
+      .stat-table {
+        display: grid;
+        grid-template-columns: 1fr auto auto auto;
+        gap: 0;
+        margin-bottom: 18px;
+        width: 100%;
+      }
+
+      .stat-th {
+        background: #0f0f20;
+        color: #555;
+        font-size: 0.58rem;
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+        padding: 5px 8px;
+        text-align: center;
+        border-bottom: 1px solid #1e1e35;
+      }
+
+      .stat-th:first-child { text-align: left; padding-left: 10px; }
+
+      .stat-label-row, .stat-run, .stat-best-cell, .stat-leader {
+        padding: 7px 10px;
+        border-top: 1px solid #1a1a30;
+        display: flex;
+        align-items: center;
+      }
+
+      .stat-label-row {
+        color: #888;
+        font-size: 0.7rem;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+      }
+
+      .stat-run, .stat-best-cell {
+        font-size: 1rem;
+        font-weight: 700;
+        color: #fff;
+        min-width: 48px;
+        justify-content: center;
+        text-align: center;
+      }
+
+      .stat-best-cell { color: #64748b; }
+      .stat-best-cell.new-record { color: #facc15; }
+
+      .stat-leader {
+        font-size: 0.65rem;
+        color: #555;
+        min-width: 72px;
+        gap: 4px;
+        justify-content: center;
+        flex-wrap: wrap;
+      }
+
+      .stat-leader .ldot {
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        flex-shrink: 0;
+        display: inline-block;
+      }
+
+      .stat-na { color: #2a2a40 !important; }
+
+      .deaths-line {
+        font-size: 0.75rem;
+        color: #444;
+        margin-bottom: 18px;
+        text-align: center;
+        letter-spacing: 0.04em;
+      }
+
+      .deaths-line strong { color: #888; }
+
+      @media (max-width: 380px) {
+        .stat-table { grid-template-columns: 1fr auto auto; }
+        .stat-leader, .stat-th:last-child { display: none; }
+      }
+
+      #death-card-inner .dismiss-hint {
+        font-size: 0.75rem;
+        color: #444;
+        margin-top: 6px;
+      }
+
+      #top-player-banner {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 10px;
+        background: #1a1a2e;
+        border-radius: 10px;
+        padding: 10px 14px;
+        margin-bottom: 18px;
+        font-size: 0.85rem;
+        color: #aaa;
+      }
+
+      #top-player-banner .top-dot {
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+        flex-shrink: 0;
+      }
+
+      #top-player-banner .top-name {
+        font-weight: 700;
+        color: #fff;
+      }
+
+      #top-player-banner .top-score {
+        margin-left: auto;
+        font-weight: 700;
+        color: #facc15;
+      }
     </style>
   </head>
   <body>
     <!-- Join Screen -->
     <div id="join-screen">
       <div class="join-card">
-        <h1>🕹 Arena</h1>
+        <h1>🕹 Snakealot</h1>
         <div>
           <label for="name-input">Your name</label>
           <input
@@ -197,6 +557,110 @@
       </div>
     </div>
 
+    <!-- Snakes on a Plane Easter Egg -->
+    <div id="plane-flyby" aria-hidden="true">
+      <span id="plane-icon">✈️</span>
+      <div id="plane-banner">🐍 SNAKES ON A PLANE! 🐍</div>
+    </div>
+
+    <!-- Mobile Controls -->
+    <div id="mobile-controls">
+      <div id="joystick-zone"></div>
+      <div id="joystick-ring">
+        <div id="joystick-nub"></div>
+      </div>
+      <button id="sprint-btn-mobile" aria-label="Sprint">
+        ⚡<span>SPRINT</span>
+      </button>
+    </div>
+
+    <!-- HUD Toggle Buttons -->
+    <button
+      id="toggle-scoreboard"
+      class="hud-toggle"
+      aria-label="Toggle scoreboard"
+    >
+      SCORES ▴
+    </button>
+    <button id="toggle-minimap" class="hud-toggle" aria-label="Toggle minimap">
+      MAP ▴
+    </button>
+
+    <!-- Death / Stats Card -->
+    <div
+      id="death-card"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Death stats"
+    >
+      <div id="death-card-inner">
+        <h2>💀 You died!</h2>
+        <p class="subtitle">Run Summary</p>
+        <div id="top-player-banner">
+          <span class="top-dot" id="top-player-dot"></span>
+          <span>🏆 <span id="top-player-name">&mdash;</span></span>
+          <span class="top-score" id="top-player-score"></span>
+        </div>
+        <div class="stat-table">
+          <div class="stat-th"></div>
+          <div class="stat-th">This Run</div>
+          <div class="stat-th">Best Ever</div>
+          <div class="stat-th">Leader</div>
+
+          <div class="stat-label-row">Score</div>
+          <div class="stat-run" id="run-score">0</div>
+          <div class="stat-best-cell" id="best-score">0</div>
+          <div class="stat-leader" id="leader-score">&mdash;</div>
+
+          <div class="stat-label-row">Tail</div>
+          <div class="stat-run" id="run-tail">0</div>
+          <div class="stat-best-cell" id="best-tail">0</div>
+          <div class="stat-leader" id="leader-tail">&mdash;</div>
+
+          <div class="stat-label-row">Food</div>
+          <div class="stat-run" id="run-food">0</div>
+          <div class="stat-best-cell" id="best-food">0</div>
+          <div class="stat-leader stat-na">&mdash;</div>
+
+          <div class="stat-label-row">Powerups</div>
+          <div class="stat-run" id="run-powerups">0</div>
+          <div class="stat-best-cell" id="best-powerups">0</div>
+          <div class="stat-leader stat-na">&mdash;</div>
+
+          <div class="stat-label-row">Distance</div>
+          <div class="stat-run" id="run-distance">0</div>
+          <div class="stat-best-cell" id="best-distance">0</div>
+          <div class="stat-leader stat-na">&mdash;</div>
+        </div>
+        <div class="deaths-line">
+          💀 Deaths: <strong id="stat-deaths">0</strong> this session &nbsp;&middot;&nbsp; All time: <strong id="stat-alltime-deaths">0</strong>
+        </div>
+        <p class="dismiss-hint">Click anywhere to continue</p>
+      </div>
+    </div>
+
     <script src="/client.js"></script>
+    <script>
+      (function () {
+        function flyPlane() {
+          var el = document.getElementById("plane-flyby");
+          if (!el) return;
+          el.classList.remove("flying");
+          void el.offsetWidth; // force reflow to restart animation
+          el.classList.add("flying");
+        }
+
+        function scheduleNextFly() {
+          // Random interval between 3 and 4 minutes
+          var delay = 180000 + Math.random() * 60000;
+          setTimeout(function () {
+            flyPlane();
+            scheduleNextFly();
+          }, delay);
+        }
+
+        scheduleNextFly();
+      })();
+    </script>
   </body>
 </html>

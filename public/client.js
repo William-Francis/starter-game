@@ -3423,6 +3423,8 @@
     SPAWN_IMMUNITY_MS: 2e3,
     POWERUP_RADIUS: 14,
     POWERUP_TARGET_COUNT: 3,
+    HELMET_TARGET_COUNT: 2,
+    // number of helmets to keep in arena
     POWERUP_SPEED_DURATION: 5e3,
     // ms
     POWERUP_REVERSE_DURATION: 5e3,
@@ -3434,6 +3436,16 @@
     // ms
     POWERUP_MAGNET_RADIUS: 200,
     // px — food attraction pull range
+    POWERUP_COIN_FLIP_WIN: 5,
+    // points gained on heads
+    POWERUP_COIN_FLIP_LOSS: 2,
+    // points lost on tails (minor)
+    OMNI_TARGET_COUNT: 1,
+    // one omni powerup in arena at a time
+    ZAP_PELLET_THRESHOLD: 10,
+    // food pellets needed to charge the zap
+    ZAP_STUN_DURATION: 400,
+    // ms the zap stuns the target
     SPRINT_SPEED_MULTIPLIER: 1.2,
     SPRINT_MAX_STAMINA: 100,
     // unitless
@@ -3447,8 +3459,60 @@
     // visual radius
     BLACKHOLE_TARGET_COUNT: 4,
     // number of black holes in arena
-    BLACKHOLE_MIN_DISTANCE: 300
+    BLACKHOLE_MIN_DISTANCE: 300,
     // minimum distance between holes
+    JACKBOX_TARGET_COUNT: 1,
+    // keep at most one jack-in-the-box on map
+    JACKBOX_RESPAWN_CHANCE_PER_TICK: 1e-3,
+    // rare respawn chance (~every 16s on average when absent)
+    JACKBOX_GLUE_DURATION: 5e3,
+    // ms players stay glued
+    JACKBOX_BLAST_SPEED: 800,
+    // units/sec blast speed when released
+    GUN_TARGET_COUNT: 1,
+    // gun pickups on map at once
+    GUN_RANGE: 500,
+    // 5 grid squares × 100 units
+    GUN_FIRE_INTERVAL: 1200,
+    // ms between auto-shots
+    GUN_BULLET_SPEED: 400,
+    // units/sec
+    GUN_KNOCKBACK_SPEED: 300,
+    // units/sec applied to hit player
+    GUN_AMMO: 5,
+    // shots before gun disappears
+    GUN_BULLET_RADIUS: 8,
+    // collision radius for hit detection
+    MINIGUN_TARGET_COUNT: 1,
+    // minigun pickups on map at once
+    MINIGUN_AMMO: 100,
+    // shots (burns through fast)
+    MINIGUN_FIRE_INTERVAL: 80,
+    // ms between shots — ~12 shots/sec
+    MINIGUN_SPREAD: 0.18,
+    // radians half-angle spread cone
+    ICBM_TARGET_COUNT: 1,
+    // ICBM pickups on map at once
+    ICBM_MISSILE_SPEED: 200,
+    // units/sec (same as player — run or dodge!)
+    ICBM_TURN_RATE: 1.5,
+    // radians/sec max homing turn rate
+    ICBM_DETONATE_RADIUS: 35,
+    // explode when within this distance of target
+    ICBM_BLAST_RADIUS: 130,
+    // AOE explosion radius
+    ICBM_LIFESPAN: 15e3,
+    // ms before self-destruct
+    HOOK_TARGET_COUNT: 1,
+    // hook pickups in arena at once
+    HOOK_PROJECTILE_SPEED: 800,
+    // units/sec the hook tip flies
+    HOOK_MAX_RANGE: 700,
+    // units before hook despawns
+    HOOK_PULL_SPEED: 400,
+    // units/sec the hooked target is pulled
+    HOOK_PULL_DURATION: 1500
+    // ms the pull lasts after latching
   };
   var EVENTS = {
     // client -> server
@@ -3467,13 +3531,74 @@
     speed: { color: "#facc15", label: "\u26A1" },
     "double-tail": { color: "#a855f7", label: "\xD72" },
     reverse: { color: "#22d3ee", label: "\u21A9" },
-    magnet: { color: "#ec4899", label: "\u{1F9F2}" }
+    magnet: { color: "#ec4899", label: "\u{1F9F2}" },
+    "coin-flip": { color: "#fde68a", label: "\u{1FA99}" },
+    helmet: { color: "#9ca3af", label: "\u{1F6E1}\uFE0F" },
+    omni: { color: "#ffffff", label: "\u2605" },
+    "jack-in-the-box": { color: "#f97316", label: "\u{1F381}" },
+    gun: { color: "#ef4444", label: "\u{1F52B}" },
+    minigun: { color: "#f97316", label: "\u{1F52B}\u{1F52B}" },
+    icbm: { color: "#22d3ee", label: "\u{1F680}" },
+    hook: { color: "#f59e0b", label: "\u{1FA9D}" }
   };
   var GRID_SIZE = 100;
   var BG_COLOR = "#1a1a2e";
   var ARENA_BORDER = "#4a4a8a";
   var GRID_COLOR = "rgba(255,255,255,0.04)";
   var FOOD_COLOR = "#22c55e";
+  var SILLY_MESSAGES = [
+    "hey loser",
+    "gimme ur tail",
+    "nice helmet lol",
+    "get out my way",
+    "ur bad",
+    "I'm fasting",
+    "salty?",
+    "YEET",
+    "lmao",
+    "ok nerd",
+    "imagine",
+    "skill issue",
+    "cope",
+    "rent free",
+    "ratio'd",
+    "sus",
+    "mid",
+    "no cap",
+    "bussin",
+    "eat my tail",
+    "ur mom",
+    "no u",
+    "stop",
+    "why",
+    "you suck",
+    "rekt",
+    "owned",
+    "haha",
+    "git gud",
+    "eat dirt",
+    "l + ratio",
+    "touch grass",
+    "maidenless",
+    "down bad",
+    "simping",
+    "no bitches?",
+    "caught in 4k",
+    "average player",
+    "ratio incoming",
+    "stay mad",
+    "malding",
+    "get rolled",
+    "EZ",
+    "EASY WIN",
+    "skill gap",
+    "do better",
+    "DELETED",
+    "L take",
+    "cringe",
+    "yikes"
+  ];
+  var AVATAR_ASSET_BASE_URL = new URL(".", window.location.href).toString();
   function createRendererState() {
     return {
       localPlayerId: null,
@@ -3484,10 +3609,17 @@
       camera: { x: CONFIG.ARENA_WIDTH / 2, y: CONFIG.ARENA_HEIGHT / 2 },
       lastFrameTime: Date.now(),
       scamPopup: null,
+      coinFlipPopup: null,
+      ouroborosPopup: null,
+      omniPopup: null,
+      speechBubbles: /* @__PURE__ */ new Map(),
+      lastSpeechTime: /* @__PURE__ */ new Map(),
       particles: [],
       prevFoodCount: 0,
       prevPlayerHits: /* @__PURE__ */ new Map(),
-      prevPlayerPos: /* @__PURE__ */ new Map()
+      prevPlayerPos: /* @__PURE__ */ new Map(),
+      scoreboardCollapsed: false,
+      minimapCollapsed: false
     };
   }
   function lerp(a, b, t) {
@@ -3623,6 +3755,38 @@
           state.particles.splice(i, 1);
         }
       }
+      const SPEECH_PROXIMITY = 150;
+      const SPEECH_DURATION = 3e3;
+      const SPEECH_COOLDOWN = 8e3;
+      const SPEECH_CHANCE = 200;
+      for (const [playerId, bubble] of state.speechBubbles.entries()) {
+        if (now - bubble.startTime > SPEECH_DURATION) {
+          state.speechBubbles.delete(playerId);
+        }
+      }
+      for (const player of state.latestState.players) {
+        if (state.speechBubbles.has(player.id)) continue;
+        const lastSpeech = state.lastSpeechTime.get(player.id) ?? 0;
+        if (now - lastSpeech < SPEECH_COOLDOWN) continue;
+        for (const other of state.latestState.players) {
+          if (other.id === player.id) continue;
+          const dx = other.x - player.x;
+          const dy = other.y - player.y;
+          const dist = Math.sqrt(dx * dx + dy * dy);
+          if (dist < SPEECH_PROXIMITY) {
+            if (Math.random() < 1 / SPEECH_CHANCE) {
+              const message = SILLY_MESSAGES[Math.floor(Math.random() * SILLY_MESSAGES.length)];
+              state.speechBubbles.set(player.id, {
+                playerId: player.id,
+                message,
+                startTime: now
+              });
+              state.lastSpeechTime.set(player.id, now);
+              break;
+            }
+          }
+        }
+      }
       const offsetX = canvas2.width / 2 - state.camera.x;
       const offsetY = canvas2.height / 2 - state.camera.y;
       ctx.clearRect(0, 0, canvas2.width, canvas2.height);
@@ -3665,25 +3829,98 @@
         if (!style) continue;
         const r = CONFIG.POWERUP_RADIUS * puPulse;
         ctx.save();
-        ctx.shadowColor = style.color;
-        ctx.shadowBlur = 18;
-        ctx.strokeStyle = style.color;
-        ctx.lineWidth = 2.5;
-        ctx.beginPath();
-        ctx.arc(pu.x, pu.y, r + 5, 0, Math.PI * 2);
-        ctx.stroke();
-        ctx.fillStyle = style.color;
-        ctx.globalAlpha = 0.85;
-        ctx.beginPath();
-        ctx.arc(pu.x, pu.y, r, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.globalAlpha = 1;
-        ctx.shadowBlur = 0;
-        ctx.font = `bold ${r * 1.1}px "Segoe UI", system-ui, sans-serif`;
-        ctx.textAlign = "center";
-        ctx.textBaseline = "middle";
-        ctx.fillStyle = "#000";
-        ctx.fillText(style.label, pu.x, pu.y + 1);
+        if (pu.type === "omni") {
+          const hue = now * 0.15 % 360;
+          const rainbowColor = `hsl(${hue}, 100%, 60%)`;
+          const rainbowColor2 = `hsl(${(hue + 180) % 360}, 100%, 60%)`;
+          for (let ri = 0; ri < 3; ri++) {
+            const ringHue = (hue + ri * 120) % 360;
+            const spinAngle = now * 3e-3 * (ri % 2 === 0 ? 1 : -1);
+            ctx.strokeStyle = `hsl(${ringHue}, 100%, 65%)`;
+            ctx.lineWidth = 2;
+            ctx.shadowColor = `hsl(${ringHue}, 100%, 65%)`;
+            ctx.shadowBlur = 14;
+            ctx.beginPath();
+            ctx.arc(pu.x, pu.y, r + 5 + ri * 4, spinAngle, spinAngle + Math.PI * 1.5);
+            ctx.stroke();
+          }
+          const grad = ctx.createRadialGradient(pu.x, pu.y, 0, pu.x, pu.y, r);
+          grad.addColorStop(0, "#ffffff");
+          grad.addColorStop(0.5, rainbowColor);
+          grad.addColorStop(1, rainbowColor2);
+          ctx.fillStyle = grad;
+          ctx.globalAlpha = 0.9;
+          ctx.shadowBlur = 0;
+          ctx.beginPath();
+          ctx.arc(pu.x, pu.y, r, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.globalAlpha = 1;
+          ctx.font = `bold ${r * 1.1}px "Segoe UI", system-ui, sans-serif`;
+          ctx.textAlign = "center";
+          ctx.textBaseline = "middle";
+          ctx.fillStyle = "#000";
+          ctx.fillText(style.label, pu.x, pu.y + 1);
+        } else if (pu.type === "jack-in-the-box") {
+          const boxSize = r * 1.7;
+          const boxHalf = boxSize / 2;
+          ctx.shadowColor = "#f97316";
+          ctx.shadowBlur = 18;
+          ctx.fillStyle = "#f97316";
+          ctx.globalAlpha = 0.92;
+          ctx.beginPath();
+          ctx.roundRect(pu.x - boxHalf, pu.y - boxHalf * 0.65, boxSize, boxSize * 1.1, 6);
+          ctx.fill();
+          ctx.globalAlpha = 1;
+          ctx.shadowBlur = 0;
+          ctx.fillStyle = "#7c2d12";
+          const stripeW = boxSize * 0.14;
+          for (let sx = pu.x - boxHalf + stripeW; sx < pu.x + boxHalf; sx += stripeW * 2) {
+            ctx.fillRect(sx, pu.y - boxHalf * 0.65, stripeW, boxSize * 1.1);
+          }
+          ctx.strokeStyle = "#111827";
+          ctx.lineWidth = 2.2;
+          ctx.beginPath();
+          const springTop = pu.y - boxHalf * 1.15;
+          const springBottom = pu.y - boxHalf * 0.72;
+          const coils = 5;
+          for (let i = 0; i <= coils; i++) {
+            const t2 = i / coils;
+            const x = pu.x + Math.sin(t2 * Math.PI * 4) * (r * 0.36);
+            const y = springTop + (springBottom - springTop) * t2;
+            if (i === 0) ctx.moveTo(x, y);
+            else ctx.lineTo(x, y);
+          }
+          ctx.stroke();
+          ctx.fillStyle = "#fde68a";
+          ctx.beginPath();
+          ctx.arc(pu.x, springTop - r * 0.18, r * 0.34, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.font = `bold ${r * 0.95}px "Segoe UI", system-ui, sans-serif`;
+          ctx.textAlign = "center";
+          ctx.textBaseline = "middle";
+          ctx.fillStyle = "#111827";
+          ctx.fillText("J", pu.x, pu.y + 1);
+        } else {
+          ctx.shadowColor = style.color;
+          ctx.shadowBlur = 18;
+          ctx.strokeStyle = style.color;
+          ctx.lineWidth = 2.5;
+          ctx.beginPath();
+          ctx.arc(pu.x, pu.y, r + 5, 0, Math.PI * 2);
+          ctx.stroke();
+          ctx.fillStyle = style.color;
+          ctx.globalAlpha = 0.85;
+          ctx.beginPath();
+          ctx.arc(pu.x, pu.y, r, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.globalAlpha = 1;
+          ctx.shadowBlur = 0;
+          ctx.font = `bold ${r * 1.1}px "Segoe UI", system-ui, sans-serif`;
+          ctx.textAlign = "center";
+          ctx.textBaseline = "middle";
+          ctx.fillStyle = "#000";
+          ctx.fillText(style.label, pu.x, pu.y + 1);
+        }
         ctx.restore();
       }
       for (const bh of state.latestState.blackholes) {
@@ -3749,6 +3986,60 @@
       }
       const topScorer = state.latestState.players.reduce((max, p) => p.score > max.score ? p : max);
       for (const player of state.latestState.players) {
+        if (!player.gluedTo || !player.gluedUntil) continue;
+        if (player.id > player.gluedTo) continue;
+        const partner = state.latestState.players.find((p) => p.id === player.gluedTo);
+        if (!partner) continue;
+        const posA = interp.get(player.id) ?? { x: player.x, y: player.y };
+        const posB = interp.get(partner.id) ?? { x: partner.x, y: partner.y };
+        const timeLeft = Math.max(0, player.gluedUntil - now);
+        const progress = timeLeft / CONFIG.JACKBOX_GLUE_DURATION;
+        const wobble = Math.sin(now * 0.015) * 12 * progress;
+        const midX = (posA.x + posB.x) / 2 + wobble;
+        const midY = (posA.y + posB.y) / 2 + wobble;
+        const r = Math.floor(255);
+        const g = Math.floor(150 * progress);
+        ctx.save();
+        ctx.strokeStyle = `rgb(${r},${g},0)`;
+        ctx.lineWidth = 3 + 2 * progress;
+        ctx.setLineDash([8, 5]);
+        ctx.shadowColor = `rgb(${r},${g},0)`;
+        ctx.shadowBlur = 8;
+        ctx.beginPath();
+        ctx.moveTo(posA.x, posA.y);
+        ctx.quadraticCurveTo(midX, midY, posB.x, posB.y);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.restore();
+      }
+      for (const hook of state.latestState.hooks ?? []) {
+        const ownerPos = interp.get(hook.ownerId) ?? state.latestState.players.find((p) => p.id === hook.ownerId);
+        if (!ownerPos) continue;
+        let tipX = hook.x;
+        let tipY = hook.y;
+        if (hook.latchedTo) {
+          const targetPos = interp.get(hook.latchedTo) ?? state.latestState.players.find((p) => p.id === hook.latchedTo);
+          if (targetPos) {
+            tipX = targetPos.x;
+            tipY = targetPos.y;
+          }
+        }
+        ctx.save();
+        ctx.strokeStyle = "#f59e0b";
+        ctx.lineWidth = 3;
+        if (!hook.latchedTo) ctx.setLineDash([8, 6]);
+        ctx.beginPath();
+        ctx.moveTo(ownerPos.x, ownerPos.y);
+        ctx.lineTo(tipX, tipY);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.fillStyle = "#fbbf24";
+        ctx.beginPath();
+        ctx.arc(tipX, tipY, 6, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      }
+      for (const player of state.latestState.players) {
         const pos = interp.get(player.id) ?? { x: player.x, y: player.y };
         const isLocal = player.id === state.localPlayerId;
         const isStunned = player.stunned;
@@ -3789,140 +4080,195 @@
         ctx.fillStyle = player.color;
         ctx.fill();
         const hashCode = player.id.charCodeAt(0) + player.id.charCodeAt(player.id.length - 1);
-        const faceStyle = Math.abs(hashCode) % 5;
-        const tongueColor = ["#ff69b4", "#00ff00", "#ffff00", "#ff6347", "#9370db"][Math.abs(hashCode) % 5];
-        const eyeOffsetX = CONFIG.PLAYER_RADIUS * 0.35;
-        const eyeOffsetY = CONFIG.PLAYER_RADIUS * 0.25;
-        const eyeRadius = CONFIG.PLAYER_RADIUS * 0.22;
-        const eyePupilRadius = CONFIG.PLAYER_RADIUS * 0.1;
+        const faceStyle = Math.abs(hashCode) % 12;
+        const eyeOffsetX = CONFIG.PLAYER_RADIUS * 0.33;
+        const eyeOffsetY = CONFIG.PLAYER_RADIUS * 0.22;
+        const eyeR = CONFIG.PLAYER_RADIUS * 0.2;
         const moveDir = player.facingAngle ?? 0;
-        const pupilOffsetX = Math.cos(moveDir) * eyePupilRadius * 0.5;
-        const pupilOffsetY = Math.sin(moveDir) * eyePupilRadius * 0.5;
-        if (faceStyle === 0 || faceStyle === 1) {
+        const lookX = Math.cos(moveDir) * eyeR * 0.35;
+        const lookY = Math.sin(moveDir) * eyeR * 0.35;
+        const blink = 0.35 + 0.65 * Math.abs(Math.sin(now * 4e-3 + hashCode * 0.17));
+        const winkCycleMs = 9500;
+        const winkWindowMs = 230;
+        const winkPhase = (now + hashCode * 173) % winkCycleMs;
+        const winkingEye = winkPhase < winkWindowMs ? hashCode % 2 === 0 ? "left" : "right" : null;
+        const eyeRollCycleMs = 14e3;
+        const eyeRollWindowMs = 210;
+        const eyeRollPhase = (now + hashCode * 311) % eyeRollCycleMs;
+        const isEyeRoll = eyeRollPhase < eyeRollWindowMs;
+        const drawSnakeEye = (x, y, style, eyeSeed, side) => {
+          const styleType = Math.abs(style) % 12;
+          const eyeJitterX = Math.sin(now * 3e-3 + eyeSeed * 0.9) * eyeR * 0.07;
+          const eyeJitterY = Math.cos(now * 27e-4 + eyeSeed * 0.6) * eyeR * 0.05;
+          const cx = x + eyeJitterX;
+          const cy = y + eyeJitterY;
+          const isWinkThisEye = winkingEye === side;
+          const scleraH = eyeR * (styleType === 1 || styleType === 7 ? 0.52 : 0.92) * (isWinkThisEye ? 0.2 : blink);
+          const localLookX = isEyeRoll ? 0 : lookX;
+          const localLookY = isEyeRoll ? -eyeR * 0.6 : lookY;
           ctx.fillStyle = "#ffffff";
           ctx.beginPath();
-          ctx.arc(pos.x - eyeOffsetX, pos.y - eyeOffsetY, eyeRadius, 0, Math.PI * 2);
+          ctx.ellipse(cx, cy, eyeR, Math.max(eyeR * 0.22, scleraH), 0, 0, Math.PI * 2);
           ctx.fill();
-          ctx.beginPath();
-          ctx.arc(pos.x + eyeOffsetX, pos.y - eyeOffsetY, eyeRadius, 0, Math.PI * 2);
-          ctx.fill();
-          ctx.fillStyle = "#000000";
-          ctx.beginPath();
-          ctx.arc(pos.x - eyeOffsetX + pupilOffsetX, pos.y - eyeOffsetY + pupilOffsetY, eyePupilRadius, 0, Math.PI * 2);
-          ctx.fill();
-          ctx.beginPath();
-          ctx.arc(pos.x + eyeOffsetX + pupilOffsetX, pos.y - eyeOffsetY + pupilOffsetY, eyePupilRadius, 0, Math.PI * 2);
-          ctx.fill();
-        } else if (faceStyle === 2) {
-          ctx.fillStyle = "#ffffff";
-          ctx.beginPath();
-          ctx.ellipse(pos.x - eyeOffsetX, pos.y - eyeOffsetY, eyeRadius, eyeRadius * 0.4, 0, 0, Math.PI * 2);
-          ctx.fill();
-          ctx.beginPath();
-          ctx.ellipse(pos.x + eyeOffsetX, pos.y - eyeOffsetY, eyeRadius, eyeRadius * 0.4, 0, 0, Math.PI * 2);
-          ctx.fill();
-          ctx.fillStyle = "#000000";
-          ctx.beginPath();
-          ctx.arc(pos.x - eyeOffsetX, pos.y - eyeOffsetY, eyePupilRadius * 0.8, 0, Math.PI * 2);
-          ctx.fill();
-          ctx.beginPath();
-          ctx.arc(pos.x + eyeOffsetX, pos.y - eyeOffsetY, eyePupilRadius * 0.8, 0, Math.PI * 2);
-          ctx.fill();
-        } else if (faceStyle === 3) {
-          ctx.fillStyle = "#ffffff";
-          ctx.beginPath();
-          ctx.arc(pos.x - eyeOffsetX, pos.y - eyeOffsetY, eyeRadius * 1.3, 0, Math.PI * 2);
-          ctx.fill();
-          ctx.beginPath();
-          ctx.arc(pos.x + eyeOffsetX, pos.y - eyeOffsetY, eyeRadius * 1.3, 0, Math.PI * 2);
-          ctx.fill();
-          ctx.fillStyle = "#000000";
-          ctx.beginPath();
-          ctx.arc(pos.x - eyeOffsetX + pupilOffsetX, pos.y - eyeOffsetY + pupilOffsetY, eyePupilRadius * 1.2, 0, Math.PI * 2);
-          ctx.fill();
-          ctx.beginPath();
-          ctx.arc(pos.x + eyeOffsetX + pupilOffsetX, pos.y - eyeOffsetY + pupilOffsetY, eyePupilRadius * 1.2, 0, Math.PI * 2);
-          ctx.fill();
-        } else {
-          ctx.strokeStyle = "#000000";
-          ctx.lineWidth = 3;
-          const eyeSize = eyeRadius * 0.7;
-          ctx.beginPath();
-          ctx.moveTo(pos.x - eyeOffsetX - eyeSize, pos.y - eyeOffsetY - eyeSize);
-          ctx.lineTo(pos.x - eyeOffsetX + eyeSize, pos.y - eyeOffsetY + eyeSize);
-          ctx.stroke();
-          ctx.beginPath();
-          ctx.moveTo(pos.x - eyeOffsetX + eyeSize, pos.y - eyeOffsetY - eyeSize);
-          ctx.lineTo(pos.x - eyeOffsetX - eyeSize, pos.y - eyeOffsetY + eyeSize);
-          ctx.stroke();
-          ctx.beginPath();
-          ctx.moveTo(pos.x + eyeOffsetX - eyeSize, pos.y - eyeOffsetY - eyeSize);
-          ctx.lineTo(pos.x + eyeOffsetX + eyeSize, pos.y - eyeOffsetY + eyeSize);
-          ctx.stroke();
-          ctx.beginPath();
-          ctx.moveTo(pos.x + eyeOffsetX + eyeSize, pos.y - eyeOffsetY - eyeSize);
-          ctx.lineTo(pos.x + eyeOffsetX - eyeSize, pos.y - eyeOffsetY + eyeSize);
-          ctx.stroke();
-        }
-        const tongueWave = Math.sin(now * 8e-3) * 0.3 + 1;
-        ctx.fillStyle = tongueColor;
-        if (faceStyle === 0 || faceStyle === 4) {
-          ctx.beginPath();
-          ctx.ellipse(pos.x, pos.y + CONFIG.PLAYER_RADIUS * 0.6, CONFIG.PLAYER_RADIUS * 0.25, CONFIG.PLAYER_RADIUS * 0.35 * tongueWave, 0, 0, Math.PI * 2);
-          ctx.fill();
-        } else if (faceStyle === 1) {
-          ctx.beginPath();
-          ctx.moveTo(pos.x, pos.y + CONFIG.PLAYER_RADIUS * 0.5);
-          ctx.lineTo(pos.x - CONFIG.PLAYER_RADIUS * 0.2, pos.y + CONFIG.PLAYER_RADIUS * 0.8 * tongueWave);
-          ctx.lineTo(pos.x, pos.y + CONFIG.PLAYER_RADIUS * 0.6 * tongueWave);
-          ctx.fill();
-          ctx.beginPath();
-          ctx.moveTo(pos.x, pos.y + CONFIG.PLAYER_RADIUS * 0.5);
-          ctx.lineTo(pos.x + CONFIG.PLAYER_RADIUS * 0.2, pos.y + CONFIG.PLAYER_RADIUS * 0.8 * tongueWave);
-          ctx.lineTo(pos.x, pos.y + CONFIG.PLAYER_RADIUS * 0.6 * tongueWave);
-          ctx.fill();
-        } else if (faceStyle === 2) {
-          for (let i = 0; i < 3; i++) {
-            const spiralX = Math.cos(now * 6e-3 + i) * CONFIG.PLAYER_RADIUS * 0.15;
-            const spiralY = pos.y + CONFIG.PLAYER_RADIUS * 0.5 + i * CONFIG.PLAYER_RADIUS * 0.15;
+          if (isWinkThisEye) {
+            ctx.strokeStyle = "#111827";
+            ctx.lineWidth = Math.max(1.4, eyeR * 0.14);
             ctx.beginPath();
-            ctx.arc(pos.x + spiralX, spiralY, CONFIG.PLAYER_RADIUS * 0.12, 0, Math.PI * 2);
+            ctx.moveTo(cx - eyeR * 0.75, cy);
+            ctx.lineTo(cx + eyeR * 0.75, cy + eyeR * 0.05);
+            ctx.stroke();
+            return;
+          }
+          const irisColor = ["#22c55e", "#eab308", "#60a5fa", "#f97316", "#a78bfa", "#fb7185", "#f43f5e", "#34d399"][styleType % 8];
+          const irisX = cx + localLookX * (styleType === 6 ? 0.25 : 0.6);
+          const irisY = cy + localLookY * (styleType === 6 ? 0.25 : 0.6);
+          ctx.fillStyle = irisColor;
+          ctx.beginPath();
+          ctx.ellipse(irisX, irisY, eyeR * (styleType === 4 ? 0.62 : 0.52), eyeR * (styleType === 4 ? 0.62 : 0.52), 0, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.fillStyle = "#111827";
+          if (styleType === 0 || styleType === 3) {
+            ctx.beginPath();
+            ctx.ellipse(cx + localLookX, cy + localLookY, eyeR * 0.14, eyeR * 0.46, 0, 0, Math.PI * 2);
+            ctx.fill();
+          } else if (styleType === 1) {
+            ctx.beginPath();
+            ctx.ellipse(cx + localLookX * 0.7, cy + localLookY * 0.7, eyeR * 0.24, eyeR * 0.22, 0, 0, Math.PI * 2);
+            ctx.fill();
+          } else if (styleType === 2) {
+            ctx.beginPath();
+            ctx.ellipse(cx + localLookX, cy + localLookY, eyeR * 0.09, eyeR * 0.5, 0.25, 0, Math.PI * 2);
+            ctx.fill();
+          } else if (styleType === 4) {
+            const wiggle = Math.sin(now * 0.01 + eyeSeed) * eyeR * 0.18;
+            ctx.beginPath();
+            ctx.arc(cx + localLookX * 0.35 + wiggle, cy + localLookY * 0.35, eyeR * 0.16, 0, Math.PI * 2);
+            ctx.fill();
+          } else if (styleType === 5) {
+            ctx.beginPath();
+            ctx.arc(cx + localLookX * 0.9, cy + localLookY * 0.9, eyeR * 0.1, 0, Math.PI * 2);
+            ctx.fill();
+          } else if (styleType === 6) {
+            ctx.strokeStyle = "#111827";
+            ctx.lineWidth = Math.max(1, eyeR * 0.12);
+            ctx.beginPath();
+            ctx.arc(cx, cy, eyeR * 0.23, 0, Math.PI * 1.75);
+            ctx.stroke();
+          } else if (styleType === 7) {
+            ctx.fillRect(cx - eyeR * 0.24, cy - eyeR * 0.06, eyeR * 0.48, eyeR * 0.12);
+          } else if (styleType === 8) {
+            ctx.beginPath();
+            ctx.ellipse(cx + eyeR * 0.18, cy - eyeR * 0.05, eyeR * 0.1, eyeR * 0.44, 0.12, 0, Math.PI * 2);
+            ctx.fill();
+          } else if (styleType === 9) {
+            ctx.beginPath();
+            ctx.ellipse(cx - eyeR * 0.12, cy + localLookY * 0.25, eyeR * 0.12, eyeR * 0.34, -0.15, 0, Math.PI * 2);
+            ctx.fill();
+          } else if (styleType === 10) {
+            ctx.beginPath();
+            ctx.moveTo(cx, cy - eyeR * 0.32);
+            ctx.lineTo(cx + eyeR * 0.16, cy);
+            ctx.lineTo(cx, cy + eyeR * 0.32);
+            ctx.lineTo(cx - eyeR * 0.16, cy);
+            ctx.closePath();
+            ctx.fill();
+          } else {
+            ctx.beginPath();
+            ctx.ellipse(cx + localLookX, cy + localLookY, eyeR * 0.12, eyeR * 0.44, -0.2, 0, Math.PI * 2);
             ctx.fill();
           }
-        } else {
+          ctx.fillStyle = "rgba(255,255,255,0.8)";
           ctx.beginPath();
-          ctx.arc(pos.x, pos.y + CONFIG.PLAYER_RADIUS * 0.6 * tongueWave, CONFIG.PLAYER_RADIUS * 0.25, 0, Math.PI * 2);
+          ctx.arc(cx - eyeR * 0.25, cy - eyeR * 0.25, eyeR * 0.12, 0, Math.PI * 2);
           ctx.fill();
-        }
-        ctx.strokeStyle = "#000000";
-        ctx.lineWidth = 2;
-        if (faceStyle === 0) {
+        };
+        drawSnakeEye(pos.x - eyeOffsetX, pos.y - eyeOffsetY, faceStyle, hashCode + 11, "left");
+        drawSnakeEye(pos.x + eyeOffsetX, pos.y - eyeOffsetY, (faceStyle + 7) % 12, hashCode + 37, "right");
+        if (faceStyle !== 4 && faceStyle !== 6) {
+          ctx.strokeStyle = "rgba(17, 24, 39, 0.7)";
+          ctx.lineWidth = 2;
           ctx.beginPath();
-          ctx.arc(pos.x, pos.y + CONFIG.PLAYER_RADIUS * 0.2, CONFIG.PLAYER_RADIUS * 0.3, 0, Math.PI, false);
+          ctx.moveTo(pos.x - eyeOffsetX - eyeR * 0.65, pos.y - eyeOffsetY - eyeR * 0.9);
+          ctx.lineTo(pos.x - eyeOffsetX + eyeR * 0.65, pos.y - eyeOffsetY - eyeR * (0.72 + 0.05 * Math.sin(now * 6e-3 + hashCode)));
           ctx.stroke();
-        } else if (faceStyle === 1) {
           ctx.beginPath();
-          ctx.arc(pos.x, pos.y + CONFIG.PLAYER_RADIUS * 0.25, CONFIG.PLAYER_RADIUS * 0.25, 0, Math.PI * 2);
-          ctx.stroke();
-        } else if (faceStyle === 2) {
-          ctx.beginPath();
-          ctx.moveTo(pos.x - CONFIG.PLAYER_RADIUS * 0.25, pos.y + CONFIG.PLAYER_RADIUS * 0.15);
-          ctx.quadraticCurveTo(pos.x - CONFIG.PLAYER_RADIUS * 0.15, pos.y + CONFIG.PLAYER_RADIUS * 0.35, pos.x, pos.y + CONFIG.PLAYER_RADIUS * 0.15);
-          ctx.quadraticCurveTo(pos.x + CONFIG.PLAYER_RADIUS * 0.15, pos.y + CONFIG.PLAYER_RADIUS * 0.35, pos.x + CONFIG.PLAYER_RADIUS * 0.25, pos.y + CONFIG.PLAYER_RADIUS * 0.15);
-          ctx.stroke();
-        } else if (faceStyle === 3) {
-          ctx.beginPath();
-          ctx.arc(pos.x, pos.y + CONFIG.PLAYER_RADIUS * 0.2, CONFIG.PLAYER_RADIUS * 0.3, Math.PI, 0, true);
-          ctx.stroke();
-        } else {
-          ctx.beginPath();
-          ctx.arc(pos.x, pos.y + CONFIG.PLAYER_RADIUS * 0.2, CONFIG.PLAYER_RADIUS * 0.2, 0, Math.PI * 2);
+          ctx.moveTo(pos.x + eyeOffsetX - eyeR * 0.65, pos.y - eyeOffsetY - eyeR * (0.72 + 0.05 * Math.sin(now * 6e-3 + hashCode + 1)));
+          ctx.lineTo(pos.x + eyeOffsetX + eyeR * 0.65, pos.y - eyeOffsetY - eyeR * 0.9);
           ctx.stroke();
         }
-        if (isLocal) {
-          ctx.strokeStyle = "#fff";
-          ctx.lineWidth = 2.5;
+        {
+          const R = CONFIG.PLAYER_RADIUS;
+          const BEARD_MIN = 3;
+          const BEARD_MAX = 30;
+          if (tailLen >= BEARD_MIN) {
+            const prog = Math.min(1, (tailLen - BEARD_MIN) / (BEARD_MAX - BEARD_MIN));
+            const beardLen = R * 2.6 * prog;
+            const strandCount = 3 + Math.floor(prog * 6);
+            ctx.save();
+            ctx.lineCap = "round";
+            for (let si = 0; si < strandCount; si++) {
+              const t2 = strandCount > 1 ? si / (strandCount - 1) : 0.5;
+              const anchorX = pos.x + Math.cos(Math.PI * 0.5 + (t2 - 0.5) * Math.PI) * R * 0.78;
+              const anchorY = pos.y + Math.sin(Math.PI * 0.5 + (t2 - 0.5) * Math.PI) * R * 0.78;
+              const sway = Math.sin(now * 15e-4 + (hashCode + si * 23) * 0.7) * R * 0.2 * prog;
+              const endX = anchorX + (t2 - 0.5) * beardLen * 0.35 + sway;
+              const endY = anchorY + beardLen;
+              const ctrlX = (anchorX + endX) / 2 + sway * 0.6;
+              const ctrlY = anchorY + beardLen * 0.55;
+              ctx.lineWidth = Math.max(1.2, (1.5 + prog * R * 0.13) * (1 - Math.abs(t2 - 0.5) * 0.55));
+              const br = Math.round(lerp(150, 215, prog));
+              const bg = Math.round(lerp(95, 205, prog));
+              const bb = Math.round(lerp(40, 195, prog));
+              ctx.strokeStyle = `rgba(${br}, ${bg}, ${bb}, 0.9)`;
+              ctx.beginPath();
+              ctx.moveTo(anchorX, anchorY);
+              ctx.quadraticCurveTo(ctrlX, ctrlY, endX, endY);
+              ctx.stroke();
+            }
+            ctx.restore();
+          }
+        }
+        {
+          const R = CONFIG.PLAYER_RADIUS;
+          const dir = player.facingAngle ?? 0;
+          const fx = Math.cos(dir);
+          const fy = Math.sin(dir);
+          const px = -fy;
+          const py = fx;
+          const mouthX = pos.x + fx * R * 0.42 + px * R * 0.08;
+          const mouthY = pos.y + fy * R * 0.42 + py * R * 0.08 + R * 0.22;
+          const cigLen = R * 0.9;
+          const cigW = Math.max(2.5, R * 0.16);
+          ctx.save();
+          ctx.lineCap = "round";
+          ctx.lineWidth = cigW;
+          ctx.strokeStyle = "#f8f5ea";
+          ctx.beginPath();
+          ctx.moveTo(mouthX, mouthY);
+          ctx.lineTo(mouthX + fx * cigLen, mouthY + fy * cigLen);
           ctx.stroke();
+          ctx.strokeStyle = "#d4a574";
+          ctx.beginPath();
+          ctx.moveTo(mouthX + fx * cigLen * 0.64, mouthY + fy * cigLen * 0.64);
+          ctx.lineTo(mouthX + fx * cigLen * 0.82, mouthY + fy * cigLen * 0.82);
+          ctx.stroke();
+          const tipX = mouthX + fx * cigLen;
+          const tipY = mouthY + fy * cigLen;
+          const emberPulse = 0.65 + 0.35 * Math.sin(now * 0.02 + hashCode);
+          ctx.fillStyle = `rgba(255, 96, 0, ${0.45 + 0.4 * emberPulse})`;
+          ctx.beginPath();
+          ctx.arc(tipX, tipY, R * 0.13, 0, Math.PI * 2);
+          ctx.fill();
+          for (let si = 0; si < 2; si++) {
+            const t2 = (now * 18e-4 + si * 0.42 + hashCode % 11 * 0.03) % 1;
+            const sx = tipX + fx * (R * (0.25 + t2 * 0.9)) + px * Math.sin(now * 3e-3 + si) * R * 0.12;
+            const sy = tipY + fy * (R * (0.25 + t2 * 0.9)) - t2 * R * 0.35;
+            ctx.fillStyle = `rgba(220, 220, 220, ${0.28 * (1 - t2)})`;
+            ctx.beginPath();
+            ctx.arc(sx, sy, R * (0.06 + 0.06 * t2), 0, Math.PI * 2);
+            ctx.fill();
+          }
+          ctx.restore();
         }
         if (isTopScorer) {
           const pulse1 = 0.5 + 0.5 * Math.sin(now * 4e-3);
@@ -3949,7 +4295,78 @@
           ctx.arc(pos.x, pos.y, CONFIG.PLAYER_RADIUS + 6, 0, Math.PI * 2);
           ctx.stroke();
         }
+        if (player.zapStunnedUntil > now) {
+          const flash = Math.sin(now * 0.04) > 0 ? 1 : 0.15;
+          ctx.globalAlpha = flash;
+          ctx.strokeStyle = "#60a5fa";
+          ctx.lineWidth = 3.5;
+          ctx.shadowColor = "#93c5fd";
+          ctx.shadowBlur = 18;
+          ctx.beginPath();
+          ctx.arc(pos.x, pos.y, CONFIG.PLAYER_RADIUS + 10, 0, Math.PI * 2);
+          ctx.stroke();
+          ctx.shadowBlur = 0;
+          ctx.globalAlpha = 1;
+        }
+        if (isLocal && player.zapCharge >= CONFIG.ZAP_PELLET_THRESHOLD) {
+          const chargePulse = 0.6 + 0.4 * Math.sin(now * 8e-3);
+          ctx.globalAlpha = chargePulse;
+          ctx.strokeStyle = "#3b82f6";
+          ctx.lineWidth = 3;
+          ctx.shadowColor = "#60a5fa";
+          ctx.shadowBlur = 20;
+          ctx.beginPath();
+          ctx.arc(pos.x, pos.y, CONFIG.PLAYER_RADIUS + 14, 0, Math.PI * 2);
+          ctx.stroke();
+          ctx.shadowBlur = 0;
+          ctx.globalAlpha = 1;
+        }
         ctx.shadowBlur = 0;
+        if (player.hasHelmet) {
+          const R = CONFIG.PLAYER_RADIUS;
+          const armorY = pos.y + R * 0.06;
+          ctx.save();
+          ctx.shadowBlur = 0;
+          const armorGrad = ctx.createLinearGradient(pos.x, armorY - R * 0.7, pos.x, armorY + R * 0.5);
+          armorGrad.addColorStop(0, "#e5e7eb");
+          armorGrad.addColorStop(0.55, "#9ca3af");
+          armorGrad.addColorStop(1, "#6b7280");
+          ctx.strokeStyle = "#4b5563";
+          ctx.lineWidth = Math.max(4, R * 0.26);
+          ctx.beginPath();
+          ctx.arc(pos.x, armorY, R * 0.93, Math.PI * 0.03, Math.PI * 0.97);
+          ctx.strokeStyle = armorGrad;
+          ctx.stroke();
+          ctx.strokeStyle = "#4b5563";
+          ctx.lineWidth = Math.max(1.6, R * 0.08);
+          ctx.beginPath();
+          ctx.arc(pos.x, armorY, R * 0.93, Math.PI * 0.03, Math.PI * 0.97);
+          ctx.stroke();
+          const plateW = R * 0.86;
+          const plateH = R * 0.44;
+          const plateX = pos.x - plateW / 2;
+          const plateY = pos.y + R * 0.56;
+          ctx.fillStyle = "#9ca3af";
+          ctx.strokeStyle = "#4b5563";
+          ctx.lineWidth = 1.5;
+          ctx.beginPath();
+          ctx.roundRect(plateX, plateY, plateW, plateH, 4);
+          ctx.fill();
+          ctx.stroke();
+          ctx.fillStyle = "#d1d5db";
+          for (const rx of [plateX + plateW * 0.22, plateX + plateW * 0.78]) {
+            ctx.beginPath();
+            ctx.arc(rx, plateY + plateH * 0.5, R * 0.07, 0, Math.PI * 2);
+            ctx.fill();
+          }
+          ctx.strokeStyle = "rgba(255,255,255,0.35)";
+          ctx.lineWidth = 1.2;
+          ctx.beginPath();
+          ctx.moveTo(plateX + plateW * 0.2, plateY + plateH * 0.2);
+          ctx.lineTo(plateX + plateW * 0.8, plateY + plateH * 0.2);
+          ctx.stroke();
+          ctx.restore();
+        }
         ctx.font = 'bold 13px "Segoe UI", system-ui, sans-serif';
         ctx.textAlign = "center";
         ctx.textBaseline = "bottom";
@@ -3964,6 +4381,123 @@
           ctx.fillStyle = "#facc15";
           ctx.fillText(`${remaining}s`, pos.x, labelY - 16);
         }
+        if (player.hasGun) {
+          ctx.save();
+          ctx.shadowBlur = 0;
+          const isMinigunEquipped = player.gunType === "minigun";
+          ctx.font = `${Math.round(CONFIG.PLAYER_RADIUS * 0.9)}px "Segoe UI", system-ui, sans-serif`;
+          ctx.textAlign = "center";
+          ctx.textBaseline = "middle";
+          ctx.fillText(isMinigunEquipped ? "\u{1F52B}\u{1F52B}" : "\u{1F52B}", pos.x + CONFIG.PLAYER_RADIUS + (isMinigunEquipped ? 14 : 10), pos.y - CONFIG.PLAYER_RADIUS - 8);
+          ctx.restore();
+        }
+        if (player.hasHook) {
+          ctx.save();
+          ctx.shadowBlur = 0;
+          ctx.font = `${Math.round(CONFIG.PLAYER_RADIUS * 0.9)}px "Segoe UI", system-ui, sans-serif`;
+          ctx.textAlign = "center";
+          ctx.textBaseline = "middle";
+          ctx.fillText("\u{1FA9D}", pos.x - CONFIG.PLAYER_RADIUS - 10, pos.y - CONFIG.PLAYER_RADIUS - 8);
+          ctx.restore();
+        }
+        ctx.restore();
+      }
+      for (const [playerId, bubble] of state.speechBubbles.entries()) {
+        const player = state.latestState.players.find((p) => p.id === playerId);
+        if (!player) continue;
+        const pos = interp.get(player.id) ?? { x: player.x, y: player.y };
+        const elapsed = now - bubble.startTime;
+        const progress = Math.min(elapsed / 300, 1);
+        const fadeOut = Math.max(1, (3e3 - elapsed) / 500);
+        const alpha2 = Math.min(progress, fadeOut);
+        if (alpha2 <= 0) continue;
+        ctx.save();
+        ctx.globalAlpha = alpha2;
+        const bubbleX = pos.x;
+        const bubbleY = pos.y - CONFIG.PLAYER_RADIUS - 35;
+        const padding = 8;
+        const textMetrics = ctx.measureText(bubble.message);
+        const bubbleW = textMetrics.width + padding * 2;
+        const bubbleH = 24;
+        ctx.fillStyle = "rgba(255, 255, 255, 0.95)";
+        roundRect(ctx, bubbleX - bubbleW / 2, bubbleY - bubbleH / 2, bubbleW, bubbleH, 8);
+        ctx.fill();
+        ctx.strokeStyle = player.color;
+        ctx.lineWidth = 2;
+        roundRect(ctx, bubbleX - bubbleW / 2, bubbleY - bubbleH / 2, bubbleW, bubbleH, 8);
+        ctx.stroke();
+        ctx.fillStyle = "rgba(255, 255, 255, 0.95)";
+        ctx.beginPath();
+        ctx.moveTo(bubbleX - 6, bubbleY + bubbleH / 2);
+        ctx.lineTo(bubbleX + 6, bubbleY + bubbleH / 2);
+        ctx.lineTo(bubbleX, bubbleY + bubbleH / 2 + 8);
+        ctx.fill();
+        ctx.strokeStyle = player.color;
+        ctx.stroke();
+        ctx.font = 'bold 12px "Segoe UI", system-ui, sans-serif';
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillStyle = "#000";
+        ctx.fillText(bubble.message, bubbleX, bubbleY);
+        ctx.restore();
+      }
+      ctx.restore();
+      ctx.save();
+      ctx.translate(offsetX, offsetY);
+      for (const missile of state.latestState.missiles ?? []) {
+        ctx.save();
+        ctx.translate(missile.x, missile.y);
+        ctx.rotate(missile.angle);
+        const trailLen = 28;
+        const grad = ctx.createLinearGradient(-trailLen, 0, 0, 0);
+        grad.addColorStop(0, "rgba(255, 100, 0, 0)");
+        grad.addColorStop(0.5, "rgba(255, 200, 0, 0.7)");
+        grad.addColorStop(1, "rgba(255, 60, 0, 0.9)");
+        ctx.fillStyle = grad;
+        ctx.beginPath();
+        ctx.ellipse(-trailLen / 2, 0, trailLen / 2, 5, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.shadowColor = "#22d3ee";
+        ctx.shadowBlur = 16;
+        ctx.font = '18px "Segoe UI", system-ui, sans-serif';
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText("\u{1F680}", 0, 0);
+        ctx.shadowBlur = 0;
+        ctx.restore();
+        const ownerIsLocal = missile.ownerId === state.localPlayerId;
+        if (ownerIsLocal) {
+          const target2 = state.latestState.players.find((p) => p.id === missile.targetId);
+          if (target2) {
+            ctx.save();
+            ctx.setLineDash([6, 5]);
+            ctx.strokeStyle = "rgba(34, 211, 238, 0.45)";
+            ctx.lineWidth = 1.5;
+            ctx.beginPath();
+            ctx.moveTo(missile.x, missile.y);
+            ctx.lineTo(target2.x, target2.y);
+            ctx.stroke();
+            ctx.setLineDash([]);
+            ctx.restore();
+          }
+        }
+      }
+      ctx.restore();
+      ctx.save();
+      ctx.translate(offsetX, offsetY);
+      for (const bullet of state.latestState.bullets ?? []) {
+        ctx.save();
+        ctx.shadowColor = "#ef4444";
+        ctx.shadowBlur = 12;
+        ctx.fillStyle = "#ef4444";
+        ctx.beginPath();
+        ctx.arc(bullet.x, bullet.y, 5, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.shadowBlur = 0;
+        ctx.fillStyle = "#fff";
+        ctx.beginPath();
+        ctx.arc(bullet.x, bullet.y, 2, 0, Math.PI * 2);
+        ctx.fill();
         ctx.restore();
       }
       ctx.restore();
@@ -3999,46 +4533,54 @@
       }
       ctx.globalAlpha = 1;
       ctx.restore();
-      drawHUD(ctx, canvas2, state.latestState, state.localPlayerId);
+      drawHUD(ctx, canvas2, state.latestState, state.localPlayerId, state);
       drawActiveEffects(ctx, canvas2, state.latestState, state.localPlayerId);
       drawSprintBar(ctx, canvas2, state.latestState, state.localPlayerId, now);
+      drawZapBar(ctx, canvas2, state.latestState, state.localPlayerId, now);
+      drawGunAmmoBar(ctx, canvas2, state.latestState, state.localPlayerId);
+      drawHookIndicator(ctx, canvas2, state.latestState, state.localPlayerId);
       drawScamPopup(ctx, canvas2, state);
+      drawCoinFlipPopup(ctx, canvas2, state);
+      drawOuroborosPopup(ctx, canvas2, state);
+      drawOmniPopup(ctx, canvas2, state);
     }
     requestAnimationFrame(frame);
   }
-  function drawHUD(ctx, canvas2, state, localId) {
+  function drawHUD(ctx, canvas2, state, localId, rendererState2) {
     const sorted = [...state.players].sort((a, b) => b.score - a.score);
-    const sbX = canvas2.width - 200;
-    const sbY = 16;
-    const lineH = 22;
-    const padding = 12;
-    const sbH = sorted.length * lineH + padding * 2 + 24;
-    ctx.save();
-    ctx.globalAlpha = 0.82;
-    ctx.fillStyle = "#0d0d1a";
-    roundRect(ctx, sbX - padding, sbY - padding, 184 + padding, sbH, 10);
-    ctx.fill();
-    ctx.globalAlpha = 1;
-    ctx.font = 'bold 12px "Segoe UI", system-ui, sans-serif';
-    ctx.textAlign = "left";
-    ctx.fillStyle = "#aaa";
-    ctx.fillText("SCOREBOARD", sbX, sbY + 10);
-    ctx.font = '13px "Segoe UI", system-ui, sans-serif';
-    sorted.forEach((p, i) => {
-      const y = sbY + 30 + i * lineH;
-      const isLocal = p.id === localId;
-      ctx.beginPath();
-      ctx.arc(sbX + 6, y - 4, 5, 0, Math.PI * 2);
-      ctx.fillStyle = p.color;
+    if (!rendererState2.scoreboardCollapsed) {
+      const sbX = canvas2.width - 200;
+      const sbY = 16;
+      const lineH = 22;
+      const padding = 12;
+      const sbH = sorted.length * lineH + padding * 2 + 24;
+      ctx.save();
+      ctx.globalAlpha = 0.82;
+      ctx.fillStyle = "#0d0d1a";
+      roundRect(ctx, sbX - padding, sbY - padding, 184 + padding, sbH, 10);
       ctx.fill();
-      ctx.fillStyle = isLocal ? "#facc15" : "#ddd";
-      const name = p.name.length > 11 ? p.name.slice(0, 10) + "\u2026" : p.name;
-      ctx.fillText(`${i + 1}. ${name}`, sbX + 16, y);
-      ctx.textAlign = "right";
-      ctx.fillText(`${p.score}`, sbX + 168, y);
+      ctx.globalAlpha = 1;
+      ctx.font = 'bold 12px "Segoe UI", system-ui, sans-serif';
       ctx.textAlign = "left";
-    });
-    ctx.restore();
+      ctx.fillStyle = "#aaa";
+      ctx.fillText("SCOREBOARD", sbX, sbY + 10);
+      ctx.font = '13px "Segoe UI", system-ui, sans-serif';
+      sorted.forEach((p, i) => {
+        const y = sbY + 30 + i * lineH;
+        const isLocal = p.id === localId;
+        ctx.beginPath();
+        ctx.arc(sbX + 6, y - 4, 5, 0, Math.PI * 2);
+        ctx.fillStyle = p.color;
+        ctx.fill();
+        ctx.fillStyle = isLocal ? "#facc15" : "#ddd";
+        const name = p.name.length > 11 ? p.name.slice(0, 10) + "\u2026" : p.name;
+        ctx.fillText(`${i + 1}. ${name}`, sbX + 16, y);
+        ctx.textAlign = "right";
+        ctx.fillText(`${p.score}`, sbX + 168, y);
+        ctx.textAlign = "left";
+      });
+      ctx.restore();
+    }
     ctx.save();
     ctx.globalAlpha = 0.75;
     ctx.fillStyle = "#0d0d1a";
@@ -4051,7 +4593,9 @@
     ctx.textBaseline = "middle";
     ctx.fillText(`Players: ${state.players.length}`, 24, 29);
     ctx.restore();
-    drawMinimap(ctx, canvas2, state, localId);
+    if (!rendererState2.minimapCollapsed) {
+      drawMinimap(ctx, canvas2, state, localId);
+    }
   }
   function drawMinimap(ctx, canvas2, state, localId) {
     const MAP_W = 160;
@@ -4115,6 +4659,49 @@
     ctx.fillText("MAP", mx + 4, my - 3);
     ctx.restore();
   }
+  function drawZapBar(ctx, canvas2, state, localId, now) {
+    if (!localId) return;
+    const player = state.players.find((p) => p.id === localId);
+    if (!player) return;
+    const charge = player.zapCharge ?? 0;
+    const fraction = Math.max(0, Math.min(1, charge / CONFIG.ZAP_PELLET_THRESHOLD));
+    const charged = fraction >= 1;
+    const BAR_W = 220;
+    const BAR_H = 14;
+    const MARGIN = 14;
+    const GAP = 6;
+    const sprintBarY = canvas2.height - MARGIN - BAR_H;
+    const bx = canvas2.width / 2 - BAR_W / 2;
+    const by = sprintBarY - BAR_H - GAP;
+    const radius = BAR_H / 2;
+    ctx.save();
+    ctx.globalAlpha = 0.65;
+    ctx.fillStyle = "#0d0d1a";
+    roundRect(ctx, bx, by, BAR_W, BAR_H, radius);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+    if (fraction > 0) {
+      const fillW = Math.max(BAR_H, (BAR_W - 2) * fraction);
+      const fillColor = charged ? "#3b82f6" : "#60a5fa";
+      if (charged) {
+        const flash = 0.7 + 0.3 * Math.sin(now * 0.012);
+        ctx.globalAlpha = flash;
+      }
+      ctx.fillStyle = fillColor;
+      ctx.shadowColor = fillColor;
+      ctx.shadowBlur = charged ? 14 : 6;
+      roundRect(ctx, bx + 1, by + 1, fillW, BAR_H - 2, radius - 1);
+      ctx.fill();
+      ctx.shadowBlur = 0;
+    }
+    ctx.globalAlpha = 1;
+    ctx.font = 'bold 9px "Segoe UI", system-ui, sans-serif';
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillStyle = fraction > 0.5 ? "#000" : "#60a5fa";
+    ctx.fillText(charged ? "\u26A1 ZAP READY!" : `ZAP  ${charge}/${CONFIG.ZAP_PELLET_THRESHOLD}`, canvas2.width / 2, by + BAR_H / 2);
+    ctx.restore();
+  }
   function drawSprintBar(ctx, canvas2, state, localId, now) {
     if (!localId) return;
     const player = state.players.find((p) => p.id === localId);
@@ -4158,6 +4745,78 @@
     ctx.textBaseline = "middle";
     ctx.fillStyle = fraction > 0.3 ? "#000" : "#fff";
     ctx.fillText("SPRINT  [SPACE]", canvas2.width / 2, by + BAR_H / 2);
+    ctx.restore();
+  }
+  function drawGunAmmoBar(ctx, canvas2, state, localId) {
+    if (!localId) return;
+    const player = state.players.find((p) => p.id === localId);
+    if (!player || !player.hasGun) return;
+    const isMinigun = player.gunType === "minigun";
+    const ammo = player.gunAmmo ?? 0;
+    const maxAmmo = isMinigun ? CONFIG.MINIGUN_AMMO : CONFIG.GUN_AMMO;
+    const fraction = Math.max(0, Math.min(1, ammo / maxAmmo));
+    const barColor = isMinigun ? "#f97316" : "#ef4444";
+    const BAR_W = 220;
+    const BAR_H = 14;
+    const MARGIN = 14;
+    const GAP = 6;
+    const sprintBarY = canvas2.height - MARGIN - BAR_H;
+    const zapBarY = sprintBarY - BAR_H - GAP;
+    const bx = canvas2.width / 2 - BAR_W / 2;
+    const by = zapBarY - BAR_H - GAP;
+    const radius = BAR_H / 2;
+    ctx.save();
+    ctx.globalAlpha = 0.65;
+    ctx.fillStyle = "#0d0d1a";
+    roundRect(ctx, bx, by, BAR_W, BAR_H, radius);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+    if (fraction > 0) {
+      const fillW = Math.max(BAR_H, (BAR_W - 2) * fraction);
+      ctx.fillStyle = barColor;
+      ctx.shadowColor = barColor;
+      ctx.shadowBlur = 10;
+      roundRect(ctx, bx + 1, by + 1, fillW, BAR_H - 2, radius - 1);
+      ctx.fill();
+      ctx.shadowBlur = 0;
+    }
+    ctx.globalAlpha = 1;
+    ctx.font = 'bold 9px "Segoe UI", system-ui, sans-serif';
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillStyle = fraction > 0.5 ? "#000" : barColor;
+    ctx.fillText(isMinigun ? `\u{1F52B}\u{1F52B}  \xD7${ammo}` : `\u{1F52B}  \xD7${ammo}`, canvas2.width / 2, by + BAR_H / 2);
+    ctx.restore();
+  }
+  function drawHookIndicator(ctx, canvas2, state, localId) {
+    if (!localId) return;
+    const player = state.players.find((p) => p.id === localId);
+    if (!player?.hasHook) return;
+    const BAR_W = 200;
+    const BAR_H = 14;
+    const MARGIN = 14;
+    const GAP = 6;
+    const sprintBarY = canvas2.height - MARGIN - BAR_H;
+    const zapBarY = sprintBarY - BAR_H - GAP;
+    const gunBarY = zapBarY - BAR_H - GAP;
+    const by = gunBarY - BAR_H - GAP;
+    const bx = canvas2.width / 2 - BAR_W / 2;
+    const radius = BAR_H / 2;
+    const pulse = 0.8 + 0.2 * Math.sin(Date.now() * 8e-3);
+    ctx.save();
+    ctx.globalAlpha = pulse;
+    ctx.fillStyle = "#f59e0b";
+    ctx.shadowColor = "#fbbf24";
+    ctx.shadowBlur = 14;
+    roundRect(ctx, bx, by, BAR_W, BAR_H, radius);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.globalAlpha = 1;
+    ctx.font = 'bold 9px "Segoe UI", system-ui, sans-serif';
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillStyle = "#000";
+    ctx.fillText("\u{1FA9D}  HOOK READY \u2014 Click to fire", canvas2.width / 2, by + BAR_H / 2);
     ctx.restore();
   }
   function roundRect(ctx, x, y, w, h, r) {
@@ -4230,6 +4889,161 @@
     ctx.restore();
   }
   var SCAM_POPUP_DURATION = 3e3;
+  var COIN_FLIP_POPUP_DURATION = 3e3;
+  var OUROBOROS_POPUP_DURATION = 4e3;
+  var OMNI_POPUP_DURATION = 4500;
+  function drawOmniPopup(ctx, canvas2, state) {
+    if (!state.omniPopup) return;
+    const now = Date.now();
+    const elapsed = now - state.omniPopup.startTime;
+    if (elapsed > OMNI_POPUP_DURATION) {
+      state.omniPopup = null;
+      return;
+    }
+    let alpha = 1;
+    if (elapsed < 250) {
+      alpha = elapsed / 250;
+    } else if (elapsed > OMNI_POPUP_DURATION - 700) {
+      alpha = (OMNI_POPUP_DURATION - elapsed) / 700;
+    }
+    const scale = elapsed < 350 ? 0.5 + 0.7 * Math.min(1, elapsed / 350) : 1 + 0.022 * Math.sin(elapsed * 7e-3);
+    const BOX_W = 440;
+    const BOX_H = 150;
+    const cx = canvas2.width / 2;
+    const cy = canvas2.height / 2 - 80;
+    const hue = elapsed * 0.2 % 360;
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.translate(cx, cy);
+    ctx.scale(scale, scale);
+    ctx.translate(-cx, -cy);
+    ctx.fillStyle = "rgba(0,0,0,0.75)";
+    roundRect(ctx, cx - BOX_W / 2, cy - BOX_H / 2, BOX_W, BOX_H, 20);
+    ctx.fill();
+    ctx.strokeStyle = `hsl(${hue}, 100%, 60%)`;
+    ctx.lineWidth = 3.5;
+    ctx.shadowColor = `hsl(${hue}, 100%, 60%)`;
+    ctx.shadowBlur = 28;
+    roundRect(ctx, cx - BOX_W / 2, cy - BOX_H / 2, BOX_W, BOX_H, 20);
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+    ctx.font = 'bold 32px "Segoe UI", system-ui, sans-serif';
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    const titleGrad = ctx.createLinearGradient(cx - 180, 0, cx + 180, 0);
+    titleGrad.addColorStop(0, `hsl(${hue}, 100%, 65%)`);
+    titleGrad.addColorStop(0.5, `hsl(${(hue + 120) % 360}, 100%, 65%)`);
+    titleGrad.addColorStop(1, `hsl(${(hue + 240) % 360}, 100%, 65%)`);
+    ctx.fillStyle = titleGrad;
+    ctx.fillText("\u2605 OMNIPOTENT! \u2605", cx, cy - 30);
+    ctx.font = '14px "Segoe UI", system-ui, sans-serif';
+    ctx.fillStyle = "#e0e0e0";
+    ctx.fillText("\u26A1 Speed  \xB7  \u{1F9F2} Magnet  \xB7  \u{1F6E1}\uFE0F Armor  \xB7  \xD72 Tail  \xB7  +5 pts", cx, cy + 8);
+    ctx.font = 'italic 12px "Segoe UI", system-ui, sans-serif';
+    ctx.fillStyle = "#aaa";
+    ctx.fillText("You have it all. For now.", cx, cy + 38);
+    ctx.restore();
+  }
+  function drawOuroborosPopup(ctx, canvas2, state) {
+    if (!state.ouroborosPopup) return;
+    const now = Date.now();
+    const elapsed = now - state.ouroborosPopup.startTime;
+    if (elapsed > OUROBOROS_POPUP_DURATION) {
+      state.ouroborosPopup = null;
+      return;
+    }
+    let alpha = 1;
+    if (elapsed < 250) {
+      alpha = elapsed / 250;
+    } else if (elapsed > OUROBOROS_POPUP_DURATION - 700) {
+      alpha = (OUROBOROS_POPUP_DURATION - elapsed) / 700;
+    }
+    const scale = elapsed < 350 ? 0.6 + 0.6 * Math.min(1, elapsed / 350) : 1 + 0.018 * Math.sin(elapsed * 6e-3);
+    const BOX_W = 420;
+    const BOX_H = 130;
+    const cx = canvas2.width - BOX_W / 2 - 16;
+    const cy = BOX_H / 2 + 16;
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.translate(cx, cy);
+    ctx.scale(scale, scale);
+    ctx.translate(-cx, -cy);
+    ctx.fillStyle = "rgba(0,0,0,0.7)";
+    roundRect(ctx, cx - BOX_W / 2, cy - BOX_H / 2, BOX_W, BOX_H, 18);
+    ctx.fill();
+    const borderPulse = 0.7 + 0.3 * Math.sin(elapsed * 5e-3);
+    ctx.strokeStyle = `rgba(200, 150, 15, ${borderPulse})`;
+    ctx.lineWidth = 3;
+    ctx.shadowColor = "#c8960f";
+    ctx.shadowBlur = 24;
+    roundRect(ctx, cx - BOX_W / 2, cy - BOX_H / 2, BOX_W, BOX_H, 18);
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+    ctx.font = 'bold 32px "Segoe UI", system-ui, sans-serif';
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillStyle = "#c8960f";
+    ctx.fillText("\u{1F40D} OUROBOROS! \u{1F40D}", cx, cy - 22);
+    ctx.font = '15px "Segoe UI", system-ui, sans-serif';
+    ctx.fillStyle = "#fde68a";
+    ctx.fillText("You ate your own tail!", cx, cy + 12);
+    ctx.font = 'italic 12px "Segoe UI", system-ui, sans-serif';
+    ctx.fillStyle = "#aaa";
+    ctx.fillText("An ancient and honourable way to go...", cx, cy + 40);
+    ctx.restore();
+  }
+  function drawCoinFlipPopup(ctx, canvas2, state) {
+    if (!state.coinFlipPopup) return;
+    const now = Date.now();
+    const elapsed = now - state.coinFlipPopup.startTime;
+    if (elapsed > COIN_FLIP_POPUP_DURATION) {
+      state.coinFlipPopup = null;
+      return;
+    }
+    const { heads, points } = state.coinFlipPopup;
+    let alpha = 1;
+    if (elapsed < 200) {
+      alpha = elapsed / 200;
+    } else if (elapsed > COIN_FLIP_POPUP_DURATION - 600) {
+      alpha = (COIN_FLIP_POPUP_DURATION - elapsed) / 600;
+    }
+    const scale = elapsed < 300 ? 0.7 + 0.45 * Math.min(1, elapsed / 300) : 1 + 0.015 * Math.sin(elapsed * 7e-3);
+    const BOX_W = 340;
+    const BOX_H = 110;
+    const cx = canvas2.width / 2;
+    const cy = canvas2.height / 2 - 60;
+    const accentColor = heads ? "#22c55e" : "#ef4444";
+    const title = heads ? "\u2705 ETHICAL!" : "\u274C UNETHICAL!";
+    const subtitle = heads ? `You made good choices! +${points} points` : `That was a bit shady... -${points} points`;
+    const footnote = heads ? "\u{1F31F} Keep it up!" : "\u{1F62C} No one will notice...";
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.translate(cx, cy);
+    ctx.scale(scale, scale);
+    ctx.translate(-cx, -cy);
+    ctx.fillStyle = "rgba(0,0,0,0.65)";
+    roundRect(ctx, cx - BOX_W / 2, cy - BOX_H / 2, BOX_W, BOX_H, 16);
+    ctx.fill();
+    ctx.strokeStyle = accentColor;
+    ctx.lineWidth = 3;
+    ctx.shadowColor = accentColor;
+    ctx.shadowBlur = 20;
+    roundRect(ctx, cx - BOX_W / 2, cy - BOX_H / 2, BOX_W, BOX_H, 16);
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+    ctx.font = 'bold 26px "Segoe UI", system-ui, sans-serif';
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillStyle = accentColor;
+    ctx.fillText(title, cx, cy - 20);
+    ctx.font = '15px "Segoe UI", system-ui, sans-serif';
+    ctx.fillStyle = "#facc15";
+    ctx.fillText(subtitle, cx, cy + 12);
+    ctx.font = 'italic 12px "Segoe UI", system-ui, sans-serif';
+    ctx.fillStyle = "#aaa";
+    ctx.fillText(footnote, cx, cy + 38);
+    ctx.restore();
+  }
   function drawScamPopup(ctx, canvas2, state) {
     if (!state.scamPopup) return;
     const now = Date.now();
@@ -4240,6 +5054,7 @@
     }
     const disguiseLabel = POWERUP_STYLE[state.scamPopup.disguisedAs]?.label ?? "?";
     const disguiseName = state.scamPopup.disguisedAs === "speed" ? "Speed Boost" : "Double Tail";
+    const isProtected = state.scamPopup.protected ?? false;
     let alpha = 1;
     if (elapsed < 200) {
       alpha = elapsed / 200;
@@ -4261,9 +5076,10 @@
     ctx.fillStyle = "rgba(0,0,0,0.6)";
     roundRect(ctx, cx - BOX_W / 2, cy - BOX_H / 2, BOX_W, BOX_H, 16);
     ctx.fill();
-    ctx.strokeStyle = "#ef4444";
+    const borderColor = isProtected ? "#d4af37" : "#ef4444";
+    ctx.strokeStyle = borderColor;
     ctx.lineWidth = 3;
-    ctx.shadowColor = "#ef4444";
+    ctx.shadowColor = borderColor;
     ctx.shadowBlur = 20;
     roundRect(ctx, cx - BOX_W / 2, cy - BOX_H / 2, BOX_W, BOX_H, 16);
     ctx.stroke();
@@ -4271,14 +5087,22 @@
     ctx.font = 'bold 28px "Segoe UI", system-ui, sans-serif';
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    ctx.fillStyle = "#ef4444";
-    ctx.fillText("\u{1F6A8} YOU'VE BEEN SCAMMED! \u{1F6A8}", cx, cy - 18);
+    ctx.fillStyle = isProtected ? "#d4af37" : "#ef4444";
+    if (isProtected) {
+      ctx.fillText("\u{1F6E1}\uFE0F ARMOR PROTECTED! \u{1F6E1}\uFE0F", cx, cy - 18);
+    } else {
+      ctx.fillText("\u{1F6A8} YOU'VE BEEN SCAMMED! \u{1F6A8}", cx, cy - 18);
+    }
     ctx.font = '15px "Segoe UI", system-ui, sans-serif';
-    ctx.fillStyle = "#facc15";
-    ctx.fillText(`That ${disguiseLabel} ${disguiseName} was actually  \u21A9 Reverse!`, cx, cy + 16);
+    ctx.fillStyle = isProtected ? "#d4af37" : "#facc15";
+    if (isProtected) {
+      ctx.fillText(`That ${disguiseLabel} ${disguiseName} was actually  \u21A9 Reverse!`, cx, cy + 16);
+    } else {
+      ctx.fillText(`That ${disguiseLabel} ${disguiseName} was actually  \u21A9 Reverse!`, cx, cy + 16);
+    }
     ctx.font = 'italic 12px "Segoe UI", system-ui, sans-serif';
     ctx.fillStyle = "#aaa";
-    ctx.fillText("Your controls are now reversed...", cx, cy + 42);
+    ctx.fillText(isProtected ? "Your armor saved you!" : "Your controls are now reversed...", cx, cy + 42);
     ctx.restore();
   }
 
@@ -4318,9 +5142,187 @@
     }
     el.textContent = msg;
   }
+  var killStreaks = /* @__PURE__ */ new Map();
+  var multiKillCount = 0;
+  var multiKillTimer = null;
+  var MULTI_KILL_WINDOW_MS = 4e3;
+  var MULTI_KILL_LINES = ["Double Kill", "Multi Kill", "Ultra Kill", "Monster Kill", "Ludicrous Kill", "Holy Shit"];
+  var STREAK_LINES = {
+    3: "Killing Spree",
+    6: "Rampage",
+    9: "Dominating",
+    12: "Unstoppable",
+    15: "Godlike",
+    20: "Wicked Sick"
+  };
+  function speak(text) {
+    if (!window.speechSynthesis) return;
+    window.speechSynthesis.cancel();
+    const utt = new SpeechSynthesisUtterance(text);
+    utt.pitch = 0.65;
+    utt.rate = 0.85;
+    utt.volume = 1;
+    window.speechSynthesis.speak(utt);
+  }
+  function onKill(killerId) {
+    multiKillCount++;
+    if (multiKillTimer !== null) clearTimeout(multiKillTimer);
+    multiKillTimer = setTimeout(() => {
+      multiKillCount = 0;
+      multiKillTimer = null;
+    }, MULTI_KILL_WINDOW_MS);
+    if (multiKillCount >= 2) {
+      const idx = Math.min(multiKillCount - 2, MULTI_KILL_LINES.length - 1);
+      speak(MULTI_KILL_LINES[idx]);
+      return;
+    }
+    if (killerId && killerId === rendererState.localPlayerId) {
+      const streak = (killStreaks.get(killerId) ?? 0) + 1;
+      killStreaks.set(killerId, streak);
+      if (streak in STREAK_LINES) {
+        speak(STREAK_LINES[streak]);
+        return;
+      }
+    }
+    const totalKills = [...killStreaks.values()].reduce((a, b) => a + b, 0);
+    if (totalKills === 0 && multiKillCount === 1) {
+      speak("First Blood");
+    }
+  }
   var selectedColor = PALETTE[0];
   var socket = null;
   var rendererState = createRendererState();
+  var runStats = { score: 0, tailLength: 0, foodEaten: 0, powerups: 0, distancePx: 0 };
+  var ALL_TIME_KEY = "snakealot_best";
+  function loadBests() {
+    try {
+      const raw = localStorage.getItem(ALL_TIME_KEY);
+      if (raw) return { score: 0, tailLength: 0, foodEaten: 0, powerups: 0, distancePx: 0, deaths: 0, ...JSON.parse(raw) };
+    } catch {
+    }
+    return { score: 0, tailLength: 0, foodEaten: 0, powerups: 0, distancePx: 0, deaths: 0 };
+  }
+  function saveBests(b) {
+    try {
+      localStorage.setItem(ALL_TIME_KEY, JSON.stringify(b));
+    } catch {
+    }
+  }
+  var allTimeBest = loadBests();
+  var sessionDeaths = 0;
+  var prevScore = 0;
+  var prevPrevPos = null;
+  var prevHasHelmet = false;
+  var prevPowerupTimestamps = { speed: 0, reverse: 0, magnet: 0 };
+  function updateStatsFromState(state, localId) {
+    const p = state.players.find((pl) => pl.id === localId);
+    if (!p) return;
+    if (p.score > runStats.score) runStats.score = p.score;
+    if (p.tail.length > runStats.tailLength) runStats.tailLength = p.tail.length;
+    const scoreDelta = p.score - prevScore;
+    if (scoreDelta === 1) runStats.foodEaten += 1;
+    const pows = prevPowerupTimestamps;
+    if (p.speedBoostUntil > pows.speed) {
+      runStats.powerups++;
+      pows.speed = p.speedBoostUntil;
+    }
+    if (p.reversedUntil > pows.reverse) {
+      runStats.powerups++;
+      pows.reverse = p.reversedUntil;
+    }
+    if (p.magnetUntil > pows.magnet) {
+      runStats.powerups++;
+      pows.magnet = p.magnetUntil;
+    }
+    if (prevScore > 0 && scoreDelta === prevScore) runStats.powerups++;
+    if (!prevHasHelmet && p.hasHelmet) runStats.powerups++;
+    prevHasHelmet = p.hasHelmet;
+    prevScore = p.score;
+    if (!p.stunned && prevPrevPos) {
+      const dx = p.x - prevPrevPos.x;
+      const dy = p.y - prevPrevPos.y;
+      runStats.distancePx += Math.sqrt(dx * dx + dy * dy);
+    }
+    prevPrevPos = p.stunned ? null : { x: p.x, y: p.y };
+  }
+  function setEl(id, value2) {
+    const el = document.getElementById(id);
+    if (el) el.textContent = value2;
+  }
+  function showDeathCard() {
+    const players = rendererState.latestState?.players ?? [];
+    const newRecord = {
+      score: runStats.score > allTimeBest.score,
+      tail: runStats.tailLength > allTimeBest.tailLength,
+      food: runStats.foodEaten > allTimeBest.foodEaten,
+      powerups: runStats.powerups > allTimeBest.powerups,
+      distance: runStats.distancePx > allTimeBest.distancePx
+    };
+    if (newRecord.score) allTimeBest.score = runStats.score;
+    if (newRecord.tail) allTimeBest.tailLength = runStats.tailLength;
+    if (newRecord.food) allTimeBest.foodEaten = runStats.foodEaten;
+    if (newRecord.powerups) allTimeBest.powerups = runStats.powerups;
+    if (newRecord.distance) allTimeBest.distancePx = runStats.distancePx;
+    allTimeBest.deaths++;
+    saveBests(allTimeBest);
+    setEl("run-score", String(runStats.score));
+    setEl("run-tail", String(runStats.tailLength));
+    setEl("run-food", String(runStats.foodEaten));
+    setEl("run-powerups", String(runStats.powerups));
+    setEl("run-distance", (runStats.distancePx / 1e3).toFixed(1));
+    const bestLabel = (val, isNew) => (isNew ? "\u2605 " : "") + String(val);
+    setEl("best-score", bestLabel(allTimeBest.score, newRecord.score));
+    setEl("best-tail", bestLabel(allTimeBest.tailLength, newRecord.tail));
+    setEl("best-food", bestLabel(allTimeBest.foodEaten, newRecord.food));
+    setEl("best-powerups", bestLabel(allTimeBest.powerups, newRecord.powerups));
+    setEl("best-distance", bestLabel((allTimeBest.distancePx / 1e3).toFixed(1), newRecord.distance));
+    ["score", "tail", "food", "powerups", "distance"].forEach((key) => {
+      const el = document.getElementById(`best-${key}`);
+      if (el) el.classList.toggle("new-record", newRecord[key]);
+    });
+    setEl("stat-deaths", String(sessionDeaths));
+    setEl("stat-alltime-deaths", String(allTimeBest.deaths));
+    const topByScore = players.reduce(
+      (best, p) => !best || p.score > best.score ? p : best,
+      null
+    );
+    const topByTail = players.reduce(
+      (best, p) => !best || p.tail.length > best.tail.length ? p : best,
+      null
+    );
+    const setLeader = (elId, player, val) => {
+      const el = document.getElementById(elId);
+      if (!el) return;
+      el.textContent = "";
+      if (!player) {
+        el.textContent = "\u2014";
+        return;
+      }
+      const dot = document.createElement("span");
+      dot.className = "ldot";
+      dot.style.background = player.color;
+      const nameSpan = document.createElement("span");
+      nameSpan.textContent = player.name;
+      const valSpan = document.createElement("span");
+      valSpan.textContent = val;
+      valSpan.style.cssText = "margin-left:4px;color:#facc15;font-weight:700";
+      el.append(dot, nameSpan, valSpan);
+    };
+    setLeader("leader-score", topByScore, topByScore ? String(topByScore.score) : "");
+    setLeader("leader-tail", topByTail, topByTail ? String(topByTail.tail.length) : "");
+    if (topByScore) {
+      document.getElementById("top-player-dot").style.background = topByScore.color;
+      document.getElementById("top-player-name").textContent = topByScore.name;
+      document.getElementById("top-player-score").textContent = String(topByScore.score) + " pts";
+    }
+    const card = document.getElementById("death-card");
+    card.classList.add("visible");
+    const dismiss = () => {
+      card.classList.remove("visible");
+      card.removeEventListener("click", dismiss);
+    };
+    card.addEventListener("click", dismiss);
+  }
   PALETTE.forEach((color) => {
     const swatch = document.createElement("div");
     swatch.className = "swatch" + (color === selectedColor ? " selected" : "");
@@ -4355,6 +5357,18 @@
       joinScreen.classList.add("hidden");
       canvas.classList.add("visible");
       disconnectedOverlay.classList.remove("visible");
+      const toggleScoreboard = document.getElementById("toggle-scoreboard");
+      const toggleMinimap = document.getElementById("toggle-minimap");
+      toggleScoreboard.classList.add("visible");
+      toggleMinimap.classList.add("visible");
+      toggleScoreboard.addEventListener("click", () => {
+        rendererState.scoreboardCollapsed = !rendererState.scoreboardCollapsed;
+        toggleScoreboard.textContent = rendererState.scoreboardCollapsed ? "SCORES \u25BE" : "SCORES \u25B4";
+      });
+      toggleMinimap.addEventListener("click", () => {
+        rendererState.minimapCollapsed = !rendererState.minimapCollapsed;
+        toggleMinimap.textContent = rendererState.minimapCollapsed ? "MAP \u25BE" : "MAP \u25B4";
+      });
       startRenderLoop(canvas, rendererState);
       setupInput();
     });
@@ -4362,12 +5376,125 @@
       rendererState.prevState = rendererState.latestState;
       rendererState.latestState = state;
       rendererState.lastStateTime = Date.now();
+      if (rendererState.localPlayerId) {
+        updateStatsFromState(state, rendererState.localPlayerId);
+      }
     });
     socket.on("scammed", (data) => {
       rendererState.scamPopup = {
         startTime: Date.now(),
         disguisedAs: data.disguisedAs
       };
+    });
+    socket.on("helmet-protected", (data) => {
+      rendererState.scamPopup = {
+        startTime: Date.now(),
+        disguisedAs: data.disguisedAs,
+        protected: true
+      };
+    });
+    socket.on("coin-flip-result", (data) => {
+      rendererState.coinFlipPopup = {
+        startTime: Date.now(),
+        heads: data.heads,
+        points: data.points
+      };
+    });
+    socket.on("ouroboros", () => {
+      rendererState.ouroborosPopup = { startTime: Date.now() };
+    });
+    socket.on("omni-collected", () => {
+      rendererState.omniPopup = { startTime: Date.now() };
+    });
+    socket.on("zap-fired", (data) => {
+      const target = rendererState.latestState?.players.find((p) => p.id === data.targetId);
+      if (target) {
+        for (let i = 0; i < 14; i++) {
+          const angle = i / 14 * Math.PI * 2;
+          const speed = 120 + Math.random() * 180;
+          rendererState.particles.push({
+            x: target.x,
+            y: target.y,
+            vx: Math.cos(angle) * speed,
+            vy: Math.sin(angle) * speed,
+            life: 500,
+            maxLife: 500,
+            size: 3 + Math.random() * 4,
+            color: Math.random() > 0.5 ? "#60a5fa" : "#ffffff",
+            type: "star"
+          });
+        }
+      }
+    });
+    socket.on("bullet-hit", (data) => {
+      for (let i = 0; i < 10; i++) {
+        const angle = Math.random() * Math.PI * 2;
+        const speed = 100 + Math.random() * 200;
+        rendererState.particles.push({
+          x: data.x,
+          y: data.y,
+          vx: Math.cos(angle) * speed,
+          vy: Math.sin(angle) * speed,
+          life: 400,
+          maxLife: 400,
+          size: 3 + Math.random() * 4,
+          color: Math.random() > 0.4 ? "#ef4444" : "#fbbf24",
+          type: "star"
+        });
+      }
+    });
+    socket.on("icbm-explosion", (data) => {
+      const count = data.fizzle ? 18 : 40;
+      for (let i = 0; i < count; i++) {
+        const angle = i / count * Math.PI * 2 + Math.random() * 0.4;
+        const speed = 80 + Math.random() * (data.radius * 1.4);
+        rendererState.particles.push({
+          x: data.x,
+          y: data.y,
+          vx: Math.cos(angle) * speed,
+          vy: Math.sin(angle) * speed,
+          life: data.fizzle ? 600 : 1e3,
+          maxLife: data.fizzle ? 600 : 1e3,
+          size: data.fizzle ? 3 + Math.random() * 5 : 5 + Math.random() * 10,
+          color: (() => {
+            const r = Math.random();
+            if (r < 0.4) return "#ff4500";
+            if (r < 0.7) return "#fbbf24";
+            if (r < 0.85) return "#ffffff";
+            return "#22d3ee";
+          })(),
+          type: "star"
+        });
+      }
+      if (!data.fizzle) {
+        for (let i = 0; i < 10; i++) {
+          const angle = Math.random() * Math.PI * 2;
+          rendererState.particles.push({
+            x: data.x,
+            y: data.y,
+            vx: Math.cos(angle) * (40 + Math.random() * 60),
+            vy: Math.sin(angle) * (40 + Math.random() * 60) - 30,
+            life: 1400,
+            maxLife: 1400,
+            size: 14 + Math.random() * 18,
+            color: "rgba(150, 150, 150, 0.5)",
+            type: "smoke"
+          });
+        }
+      }
+    });
+    socket.on("stunned", (data) => {
+      killStreaks.delete(data.playerId);
+      onKill(data.killerId);
+      if (data.playerId === rendererState.localPlayerId) {
+        sessionDeaths++;
+        prevScore = 0;
+        showDeathCard();
+        runStats = { score: 0, tailLength: 0, foodEaten: 0, powerups: 0, distancePx: 0 };
+        prevPrevPos = null;
+        prevHasHelmet = false;
+        prevPowerupTimestamps = { speed: 0, reverse: 0, magnet: 0 };
+      }
     });
     socket.on("disconnect", () => {
       disconnectedOverlay.classList.add("visible");
@@ -4391,6 +5518,22 @@
   function setupInput() {
     window.addEventListener("keydown", onKey);
     window.addEventListener("keyup", onKey);
+    canvas.addEventListener("click", onCanvasClick);
+    if ("ontouchstart" in window) setupMobileControls();
+  }
+  function onCanvasClick(e) {
+    if (!socket || !rendererState.localPlayerId) return;
+    const localPlayer = rendererState.latestState?.players.find(
+      (p) => p.id === rendererState.localPlayerId
+    );
+    if (!localPlayer?.hasHook) return;
+    const rect = canvas.getBoundingClientRect();
+    const screenX = (e.clientX - rect.left) * (canvas.width / rect.width);
+    const screenY = (e.clientY - rect.top) * (canvas.height / rect.height);
+    const worldX = screenX - canvas.width / 2 + rendererState.camera.x;
+    const worldY = screenY - canvas.height / 2 + rendererState.camera.y;
+    const angle = Math.atan2(worldY - localPlayer.y, worldX - localPlayer.x);
+    socket.emit("hook-fire", { angle });
   }
   function onKey(e) {
     if (!socket) return;
@@ -4438,5 +5581,113 @@
     if (changed) {
       socket.emit(EVENTS.INPUT, { ...keys });
     }
+  }
+  function setupMobileControls() {
+    const controls = document.getElementById("mobile-controls");
+    const zone = document.getElementById("joystick-zone");
+    const ring = document.getElementById("joystick-ring");
+    const nub = document.getElementById("joystick-nub");
+    const sprintBtn = document.getElementById("sprint-btn-mobile");
+    controls.classList.add("visible");
+    const MAX_RADIUS = 50;
+    const THRESHOLD = MAX_RADIUS * 0.28;
+    let activeTouchId = null;
+    let originX = 0;
+    let originY = 0;
+    function applyJoystick(dx, dy) {
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      const clamp = Math.min(dist, MAX_RADIUS);
+      const angle = Math.atan2(dy, dx);
+      nub.style.transform = `translate(calc(-50% + ${Math.cos(angle) * clamp}px), calc(-50% + ${Math.sin(angle) * clamp}px))`;
+      const newUp = dy < -THRESHOLD;
+      const newDown = dy > THRESHOLD;
+      const newLeft = dx < -THRESHOLD;
+      const newRight = dx > THRESHOLD;
+      let changed = false;
+      if (keys.up !== newUp) {
+        keys.up = newUp;
+        changed = true;
+      }
+      if (keys.down !== newDown) {
+        keys.down = newDown;
+        changed = true;
+      }
+      if (keys.left !== newLeft) {
+        keys.left = newLeft;
+        changed = true;
+      }
+      if (keys.right !== newRight) {
+        keys.right = newRight;
+        changed = true;
+      }
+      if (changed && socket) socket.emit(EVENTS.INPUT, { ...keys });
+    }
+    function clearJoystick() {
+      ring.style.display = "none";
+      nub.style.transform = "translate(-50%, -50%)";
+      activeTouchId = null;
+      let changed = false;
+      if (keys.up) {
+        keys.up = false;
+        changed = true;
+      }
+      if (keys.down) {
+        keys.down = false;
+        changed = true;
+      }
+      if (keys.left) {
+        keys.left = false;
+        changed = true;
+      }
+      if (keys.right) {
+        keys.right = false;
+        changed = true;
+      }
+      if (changed && socket) socket.emit(EVENTS.INPUT, { ...keys });
+    }
+    zone.addEventListener("touchstart", (e) => {
+      e.preventDefault();
+      if (activeTouchId !== null) return;
+      const touch = e.changedTouches[0];
+      activeTouchId = touch.identifier;
+      originX = touch.clientX;
+      originY = touch.clientY;
+      ring.style.display = "block";
+      ring.style.left = `${originX}px`;
+      ring.style.top = `${originY}px`;
+      applyJoystick(0, 0);
+    }, { passive: false });
+    zone.addEventListener("touchmove", (e) => {
+      e.preventDefault();
+      for (const touch of Array.from(e.changedTouches)) {
+        if (touch.identifier === activeTouchId) {
+          applyJoystick(touch.clientX - originX, touch.clientY - originY);
+        }
+      }
+    }, { passive: false });
+    zone.addEventListener("touchend", (e) => {
+      e.preventDefault();
+      for (const touch of Array.from(e.changedTouches)) {
+        if (touch.identifier === activeTouchId) clearJoystick();
+      }
+    }, { passive: false });
+    zone.addEventListener("touchcancel", () => clearJoystick());
+    sprintBtn.addEventListener("touchstart", (e) => {
+      e.preventDefault();
+      keys.sprint = true;
+      sprintBtn.classList.add("active");
+      if (socket) socket.emit(EVENTS.INPUT, { ...keys });
+    }, { passive: false });
+    sprintBtn.addEventListener("touchend", (e) => {
+      e.preventDefault();
+      keys.sprint = false;
+      sprintBtn.classList.remove("active");
+      if (socket) socket.emit(EVENTS.INPUT, { ...keys });
+    }, { passive: false });
+    sprintBtn.addEventListener("touchcancel", () => {
+      keys.sprint = false;
+      sprintBtn.classList.remove("active");
+      if (socket) socket.emit(EVENTS.INPUT, { ...keys });
+    });
   }
 })();

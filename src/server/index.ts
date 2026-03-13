@@ -1,5 +1,6 @@
 import http from 'http';
 import path from 'path';
+import fs from 'fs/promises';
 import express from 'express';
 import { Server } from 'socket.io';
 import { EVENTS, CONFIG } from '../shared/constants';
@@ -9,9 +10,27 @@ import { startGame, createPlayer, serializeState } from './game';
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: '*' } });
+const PUBLIC_DIR = path.join(__dirname, '../../public');
+
+app.get('/api/avatar-list', async (_req, res) => {
+  try {
+    const entries = await fs.readdir(PUBLIC_DIR, { withFileTypes: true });
+    const avatars = entries
+      .filter((entry) => entry.isFile() && entry.name.toLowerCase().endsWith('.png'))
+      .map((entry) => entry.name.slice(0, -4).trim().toLowerCase())
+      .filter((name) => name.length > 0)
+      .sort((a, b) => a.localeCompare(b));
+
+    res.setHeader('Cache-Control', 'no-store');
+    res.json(avatars);
+  } catch (error) {
+    console.error('[avatar-list] Failed to read public PNGs', error);
+    res.status(500).json([]);
+  }
+});
 
 // Serve client files
-app.use(express.static(path.join(__dirname, '../../public')));
+app.use(express.static(PUBLIC_DIR));
 
 const players = new Map<string, ServerPlayer>();
 
@@ -73,6 +92,13 @@ io.on('connection', (socket) => {
         sprint: !!input.sprint,
       };
     }
+  });
+
+  socket.on('hook-fire', (data: { angle: number }) => {
+    const player = players.get(socket.id);
+    if (!player || !player.hasHook || player.stunned) return;
+    const angle = typeof data?.angle === 'number' && isFinite(data.angle) ? data.angle : 0;
+    player.hookFireAngle = angle;
   });
 
   socket.on('disconnect', () => {

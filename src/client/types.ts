@@ -3,7 +3,7 @@ export interface Vec2 {
   y: number;
 }
 
-export type PowerupType = 'speed' | 'double-tail' | 'reverse';
+export type PowerupType = 'speed' | 'double-tail' | 'reverse' | 'magnet' | 'coin-flip' | 'helmet' | 'omni' | 'jack-in-the-box' | 'gun' | 'minigun' | 'icbm';
 
 export interface ClientPlayer {
   id: string;
@@ -20,6 +20,18 @@ export interface ClientPlayer {
   magnetUntil: number;
   stamina: number;
   facingAngle: number;
+  invulnerableUntil: number;
+  hasHelmet: boolean;
+  zapCharge: number;       // 0 = empty, ZAP_PELLET_THRESHOLD = fully charged
+  zapStunnedUntil: number; // timestamp until which this player is zap-stunned
+  gluedTo: string | null;  // id of the other glued player
+  gluedUntil: number;      // timestamp when glue expires
+  hasGun: boolean;
+  gunAmmo: number;
+  gunType: 'gun' | 'minigun';
+  hasHook: boolean;
+  hookedBy: string | null;
+  hookedUntil: number;
 }
 
 export interface ClientFood {
@@ -44,9 +56,36 @@ export interface ClientBlackHole {
   color: string; // hex color for this pair
 }
 
+export interface ClientBullet {
+  id: number;
+  ownerId: string;
+  x: number;
+  y: number;
+}
+
+export interface ClientHook {
+  id: number;
+  ownerId: string;
+  x: number;
+  y: number;
+  latchedTo: string | null;
+}
+
+export interface ClientMissile {
+  id: number;
+  ownerId: string;
+  x: number;
+  y: number;
+  angle: number;
+  targetId: string;
+}
+
 export interface GameStatePayload {
   players: ClientPlayer[];
   foods: ClientFood[];
   powerups: ClientPowerup[];
   blackholes: ClientBlackHole[];
+  bullets: ClientBullet[];
+  hooks: ClientHook[];
+  missiles: ClientMissile[];
 }

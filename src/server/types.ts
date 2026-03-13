@@ -34,6 +34,19 @@ export interface ServerPlayer {
   reversedUntil: number;
   magnetUntil: number;
   stamina: number;
+  hasHelmet: boolean;     // protection against next scam
+  zapCharge: number;      // food pellets collected since last zap (0–ZAP_PELLET_THRESHOLD)
+  zapStunnedUntil: number; // timestamp until which this player is zap-stunned
+  gluedTo: string | null;  // id of player this one is glued to
+  gluedUntil: number;      // timestamp when glue expires
+  hasGun: boolean;         // player is carrying a gun pickup
+  gunAmmo: number;         // shots remaining
+  lastGunFiredAt: number;  // timestamp of last gun shot
+  gunType: 'gun' | 'minigun'; // which gun is equipped
+  hasHook: boolean;        // player is carrying a hook pickup
+  hookFireAngle: number | null; // angle (radians) of pending hook fire; consumed once per tick
+  hookedBy: string | null; // id of the player whose hook has latched onto us
+  hookedUntil: number;     // timestamp when the hook pull expires
 }
 
 export interface ServerPowerup {
@@ -47,6 +60,34 @@ export interface ServerPowerup {
 export interface ServerFood {
   id: number;
   position: Vec2;
+}
+
+export interface ServerBullet {
+  id: number;
+  ownerId: string;
+  position: Vec2;
+  velocity: Vec2;
+  firedAt: number;
+}
+
+export interface ServerMissile {
+  id: number;
+  ownerId: string;
+  position: Vec2;
+  velocity: Vec2;   // direction * speed
+  targetId: string; // ID of the homing target
+  firedAt: number;
+}
+
+export interface ServerHook {
+  id: number;
+  ownerId: string;
+  position: Vec2;
+  startPosition: Vec2;
+  velocity: Vec2;
+  firedAt: number;
+  latchedTo: string | null;
+  latchedAt: number;
 }
 
 export interface ServerBlackHole {
@@ -74,6 +115,18 @@ export interface ClientPlayer {
   magnetUntil: number;
   stamina: number;
   facingAngle: number;    // radians, derived from facing vector
+  invulnerableUntil: number; // timestamp until which this player can't be killed
+  hasHelmet: boolean;
+  zapCharge: number;
+  zapStunnedUntil: number;
+  gluedTo: string | null;
+  gluedUntil: number;
+  hasGun: boolean;
+  gunAmmo: number;
+  gunType: 'gun' | 'minigun';
+  hasHook: boolean;
+  hookedBy: string | null;
+  hookedUntil: number;
 }
 
 export interface ClientFood {
@@ -97,11 +150,38 @@ export interface ClientBlackHole {
   paired?: number;
 }
 
+export interface ClientBullet {
+  id: number;
+  ownerId: string;
+  x: number;
+  y: number;
+}
+
+export interface ClientMissile {
+  id: number;
+  ownerId: string;
+  x: number;
+  y: number;
+  angle: number;    // facing angle in radians
+  targetId: string;
+}
+
+export interface ClientHook {
+  id: number;
+  ownerId: string;
+  x: number;
+  y: number;
+  latchedTo: string | null;
+}
+
 export interface GameStatePayload {
   players: ClientPlayer[];
   foods: ClientFood[];
   powerups: ClientPowerup[];
   blackholes: ClientBlackHole[];
+  bullets: ClientBullet[];
+  hooks: ClientHook[];
+  missiles: ClientMissile[];
 }
 
 export interface JoinPayload {
